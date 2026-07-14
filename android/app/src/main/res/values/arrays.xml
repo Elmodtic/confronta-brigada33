@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="preguntas_seguridad">
+        <item>¿Nombre de tu primera mascota?</item>
+        <item>¿Ciudad donde naciste?</item>
+        <item>¿Nombre de tu mejor amigo de la infancia?</item>
+        <item>¿Cuál es tu comida favorita?</item>
+        <item>¿Nombre de tu escuela primaria?</item>
+    </string-array>
+
+    <string-array name="roles">
+        <item>ADMIN</item>
+        <item>OPERADOR</item>
+        <item>CONSULTA</item>
+        <item>RANCHERO</item>
+    </string-array>
+
+    <string-array name="comidas">
+        <item>DESAYUNO</item>
+        <item>ALMUERZO</item>
+        <item>MERIENDA</item>
+    </string-array>
+
+    <string-array name="estados_confronta">
+        <item>PRESENTE</item>
+        <item>PERMISO</item>
+        <item>COMISION</item>
+        <item>OPERACION</item>
+        <item>FRANCO</item>
+    </string-array>
+</resources>

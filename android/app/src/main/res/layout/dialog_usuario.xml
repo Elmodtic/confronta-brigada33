@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="Rol" android:textColor="@color/gris_texto" />
+    <Spinner
+        android:id="@+id/spRol"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:entries="@array/roles" />
+
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/swActivo"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="Cuenta activa" />
+
+    <TextView
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="Restablecer contraseña (opcional)"
+        android:textColor="@color/gris_texto" android:layout_marginTop="16dp" />
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:hint="Nueva contraseña (dejar vacío para no cambiar)">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etNuevaClave"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:inputType="textPassword" />
+    </com.google.android.material.textfield.TextInputLayout>
+</LinearLayout>

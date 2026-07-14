@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Permite HTTP sin cifrar (solo para DESARROLLO). El backend local no usa
+     HTTPS, así que habilitamos cleartext. En producción se usaría HTTPS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

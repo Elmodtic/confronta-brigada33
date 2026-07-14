@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.Confronta" parent="Theme.Material3.DayNight">
+        <item name="colorPrimary">@color/verde_militar</item>
+        <item name="colorPrimaryDark">@color/verde_militar_oscuro</item>
+        <item name="colorOnPrimary">@color/blanco</item>
+        <item name="colorSecondary">@color/dorado</item>
+        <item name="colorOnSecondary">@color/negro</item>
+        <item name="android:statusBarColor">@color/verde_militar_oscuro</item>
+    </style>
+</resources>

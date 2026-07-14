@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Verde militar -->
+    <color name="verde_militar">#2E5A34</color>
+    <color name="verde_militar_oscuro">#1E3D23</color>
+    <color name="verde_militar_claro">#4E7A54</color>
+    <color name="dorado">#C8A24B</color>
+    <color name="blanco">#FFFFFF</color>
+    <color name="negro">#101410</color>
+    <color name="gris_fondo">#F2F4F1</color>
+    <color name="gris_texto">#5B605A</color>
+    <color name="rojo_novedad">#B3261E</color>
+    <color name="ic_launcher_background">#2E5A34</color>
+</resources>

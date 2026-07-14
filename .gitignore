@@ -1,0 +1,40 @@
+# --- Claude Code (config local, no compartir) ---
+.claude/settings.local.json
+
+# --- Node.js (backend/) ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.*
+!.env.example
+*.log
+
+# --- Android / Kotlin ---
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+/captures/
+android/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+.navigation/
+release/
+crashlytics.properties
+crashlytics-build.properties
+fabric.properties
+
+# Documentacion interna (no se sube; ver docs/CONTEXTO_TECNICO.md)
+CLAUDE.md

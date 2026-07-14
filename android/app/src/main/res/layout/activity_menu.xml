@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/gris_fondo"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/tvSaludo"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Hola" android:textSize="22sp" android:textStyle="bold"
+            android:textColor="@color/verde_militar_oscuro" />
+
+        <TextView
+            android:id="@+id/tvRol"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="@color/gris_texto" android:textSize="14sp" />
+
+        <!-- Saldo prepago -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            app:cardCornerRadius="14dp" app:cardElevation="3dp"
+            app:cardBackgroundColor="@color/verde_militar">
+            <LinearLayout
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="16dp">
+                <TextView
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Mi saldo" android:textColor="@color/blanco" android:textSize="13sp" />
+                <TextView
+                    android:id="@+id/tvSaldo"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="$0.00" android:textColor="@color/blanco"
+                    android:textSize="32sp" android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/tvTarifa"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp" android:text=""
+                    android:textColor="@color/blanco" android:textSize="13sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Comida" android:textStyle="bold"
+            android:textColor="@color/verde_militar_oscuro"
+            android:layout_marginTop="22dp" android:layout_marginBottom="4dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnReservar"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="6dp" android:paddingVertical="16dp"
+            android:text="📅  Reservar comida"
+            android:textSize="15sp" app:cornerRadius="12dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnQR"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:paddingVertical="16dp"
+            android:text="🍽️  Pasar a comer (mi QR)"
+            android:textSize="15sp" app:cornerRadius="12dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEstado"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:paddingVertical="16dp"
+            android:text="💰  Mi saldo y movimientos"
+            android:textSize="15sp" app:cornerRadius="12dp" />
+
+        <TextView
+            android:id="@+id/tvAvisoFicha"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Tu cuenta no está vinculada a una ficha de personal."
+            android:textColor="@color/rojo_novedad" android:textSize="13sp"
+            android:layout_marginTop="12dp" android:visibility="gone" />
+
+        <!-- Tesorero -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRecargar"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="16dp" android:paddingVertical="16dp"
+            android:text="💵  Recargar saldo (por cédula)"
+            android:textSize="15sp" app:cornerRadius="12dp"
+            android:visibility="gone" />
+
+        <!-- Ranchero / Admin -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCanje"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:paddingVertical="16dp"
+            android:text="📷  Canjear QR (comedor)"
+            android:textSize="15sp" app:cornerRadius="12dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnProduccion"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:paddingVertical="16dp"
+            android:text="🍳  Producción del día (platos a cocinar)"
+            android:textSize="15sp" app:cornerRadius="12dp"
+            android:visibility="gone" />
+
+        <!-- Administración (root) -->
+        <TextView
+            android:id="@+id/tvAdmin"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Administración (root)"
+            android:textStyle="bold" android:textColor="@color/verde_militar_oscuro"
+            android:layout_marginTop="22dp" android:layout_marginBottom="4dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnUsuarios"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="6dp" android:paddingVertical="16dp"
+            android:text="👥  Gestión de usuarios y roles"
+            android:textSize="15sp" app:cornerRadius="12dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAuditoria"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:paddingVertical="16dp"
+            android:text="📋  Registros (auditoría)"
+            android:textSize="15sp" app:cornerRadius="12dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnTarifa"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:paddingVertical="16dp"
+            android:text="💲  Editar precios de raciones"
+            android:textSize="15sp" app:cornerRadius="12dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnKpis"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:paddingVertical="16dp"
+            android:text="📈  Indicadores (Gobierno de TI)"
+            android:textSize="15sp" app:cornerRadius="12dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCerrar"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Cerrar sesión" />
+    </LinearLayout>
+</ScrollView>

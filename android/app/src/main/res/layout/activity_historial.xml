@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/gris_fondo"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center_vertical">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAnioAnterior"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="◀" android:minWidth="48dp" />
+            <TextView
+                android:id="@+id/tvAnio"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="center"
+                android:text="Año" android:textStyle="bold" android:textSize="20sp"
+                android:textColor="@color/verde_militar_oscuro" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAnioSiguiente"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="▶" android:minWidth="48dp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Consumo mensual" android:textStyle="bold"
+            android:textColor="@color/verde_militar_oscuro"
+            android:layout_marginTop="14dp" android:layout_marginBottom="4dp" />
+
+        <LinearLayout
+            android:id="@+id/contenedorMeses"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <View
+            android:layout_width="match_parent" android:layout_height="1dp"
+            android:background="#DDD" android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/tvTotalAnio"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Total del año: $0.00"
+            android:textStyle="bold" android:textSize="18sp"
+            android:gravity="end" android:padding="12dp"
+            android:textColor="@color/verde_militar_oscuro" />
+
+        <ProgressBar
+            android:id="@+id/progreso"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_gravity="center" android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>

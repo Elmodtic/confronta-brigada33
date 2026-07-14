@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/gris_fondo"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center_vertical">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMesAnterior"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="◀" android:minWidth="48dp" />
+            <TextView
+                android:id="@+id/tvMes"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="center"
+                android:text="Mes" android:textStyle="bold" android:textSize="18sp"
+                android:textColor="@color/verde_militar_oscuro" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMesSiguiente"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="▶" android:minWidth="48dp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvPersona"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textSize="15sp" android:textColor="@color/gris_texto" />
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            app:cardCornerRadius="14dp" app:cardElevation="2dp">
+            <LinearLayout
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Detalle de consumo" android:textStyle="bold"
+                    android:textColor="@color/verde_militar_oscuro"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView android:id="@+id/tvDesayuno"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:paddingVertical="6dp" android:textSize="15sp" />
+                <TextView android:id="@+id/tvAlmuerzo"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:paddingVertical="6dp" android:textSize="15sp" />
+                <TextView android:id="@+id/tvMerienda"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:paddingVertical="6dp" android:textSize="15sp" />
+
+                <View
+                    android:layout_width="match_parent" android:layout_height="1dp"
+                    android:background="#DDD" android:layout_marginVertical="8dp" />
+
+                <TextView
+                    android:id="@+id/tvTotal"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="TOTAL A PAGAR: $0.00"
+                    android:textStyle="bold" android:textSize="22sp"
+                    android:gravity="end" android:textColor="@color/verde_militar" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <ProgressBar
+            android:id="@+id/progreso"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_gravity="center" android:layout_marginTop="16dp"
+            android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>

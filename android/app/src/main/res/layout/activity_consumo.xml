@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/gris_fondo"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Navegación de mes -->
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center_vertical">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMesAnterior"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="◀" android:minWidth="48dp" />
+            <TextView
+                android:id="@+id/tvMes"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="center"
+                android:text="Mes" android:textStyle="bold" android:textSize="18sp"
+                android:textColor="@color/verde_militar_oscuro" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMesSiguiente"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="▶" android:minWidth="48dp" />
+        </LinearLayout>
+
+        <!-- Tarjeta: registrar consumo de un día -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            app:cardCornerRadius="14dp" app:cardElevation="2dp">
+            <LinearLayout
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Reservar comida" android:textStyle="bold"
+                    android:textSize="16sp" android:textColor="@color/verde_militar_oscuro" />
+
+                <TextView
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="El cupo cierra a las 17:00 del día anterior."
+                    android:textColor="@color/gris_texto" android:textSize="12sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnFecha"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Fecha: hoy" app:icon="@android:drawable/ic_menu_my_calendar" />
+
+                <TextView
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Estado" android:layout_marginTop="10dp"
+                    android:textColor="@color/gris_texto" />
+                <Spinner
+                    android:id="@+id/spEstado"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:entries="@array/estados_confronta" />
+
+                <CheckBox
+                    android:id="@+id/cbDesayuno"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:text="Desayuno" />
+                <CheckBox
+                    android:id="@+id/cbAlmuerzo"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="Almuerzo" />
+                <CheckBox
+                    android:id="@+id/cbMerienda"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="Merienda" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp" android:hint="Novedad (opcional)">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etNovedad"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:inputType="text" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnGuardar"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:paddingVertical="12dp"
+                    android:text="Reservar" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Lista del mes -->
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Mis reservas del mes" android:textStyle="bold"
+            android:textColor="@color/verde_militar_oscuro"
+            android:layout_marginTop="20dp" android:layout_marginBottom="4dp" />
+
+        <LinearLayout
+            android:id="@+id/contenedorDias"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <TextView
+            android:id="@+id/tvVacio"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Aún no tienes reservas en este mes."
+            android:textColor="@color/gris_texto" android:padding="12dp"
+            android:visibility="gone" />
+
+        <View
+            android:layout_width="match_parent" android:layout_height="1dp"
+            android:background="#DDD" android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/tvTotal"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Valor estimado del mes: $0.00"
+            android:textStyle="bold" android:textSize="18sp"
+            android:gravity="end" android:padding="12dp"
+            android:textColor="@color/verde_militar_oscuro" />
+
+        <ProgressBar
+            android:id="@+id/progreso"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_gravity="center" android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>
