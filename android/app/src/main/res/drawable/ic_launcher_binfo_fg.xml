@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Primer plano del ícono: la medalla del Batallón Informático con un pequeño
+     margen para que no se recorte en las máscaras (círculo/squircle). -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/escudo_binfo"
+    android:inset="14dp" />

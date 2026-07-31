@@ -98,7 +98,7 @@ interface Api {
 
     // ---- Reserva ----
     @POST("api/reserva")
-    suspend fun reservar(@Body body: ReservaReq): Response<ConfrontaResp>
+    suspend fun reservar(@Body body: ReservaReq): Response<ReservaResp>
 
     // ---- QR ----
     @POST("api/qr")

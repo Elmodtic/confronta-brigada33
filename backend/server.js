@@ -591,8 +591,8 @@ app.get('/api/mi/estado', verificarToken, async (req, res) => {
       SELECT 'RECARGA' AS tipo, monto AS monto, fecha_hora AS fecha_hora, NULL AS comida
         FROM recarga WHERE id_usuario = ?
       UNION ALL
-      SELECT 'CONSUMO' AS tipo, (-precio) AS monto, canjeado_en AS fecha_hora, comida AS comida
-        FROM ticket WHERE id_usuario = ? AND estado = 'CANJEADO'
+      SELECT 'CONSUMO' AS tipo, (-precio) AS monto, creado_en AS fecha_hora, comida AS comida
+        FROM ticket WHERE id_usuario = ? AND estado IN ('ACTIVO','CANJEADO')
     ) t ORDER BY fecha_hora DESC LIMIT 100`,
     [req.usuario.id_usuario, req.usuario.id_usuario]);
   res.json({
@@ -657,11 +657,18 @@ app.post('/api/recargas', verificarToken, soloRol('TESORERO', 'ADMIN'), async (r
 });
 
 // ===============================================================
-// RESERVA (cupo hasta las 17:00 del día anterior)
+// RESERVA = COMPRA (se cobra el saldo al reservar; cupo hasta las 17:00
+// del día anterior). Cada comida reservada genera su ticket (QR de entrada).
+// Editar la reserva antes del cierre ajusta: cobra lo que agregas, devuelve
+// lo que quitas. Si no vas a comer, la comida se pierde pero YA está pagada.
 // ===============================================================
+const COMIDAS = ['DESAYUNO', 'ALMUERZO', 'MERIENDA'];
+
 app.post('/api/reserva', verificarToken, async (req, res) => {
   const { fecha, estado, desayuno, almuerzo, merienda, novedad } = req.body;
-  if (!req.usuario.id_personal)
+  const idUsuario = req.usuario.id_usuario;
+  const idPersonal = req.usuario.id_personal;
+  if (!idPersonal)
     return res.status(400).json({ error: 'Tu cuenta no está vinculada a una ficha de personal' });
   if (!fecha) return res.status(400).json({ error: 'Falta la fecha' });
 
@@ -672,8 +679,64 @@ app.post('/api/reserva', verificarToken, async (req, res) => {
       error: `La reserva para esa fecha ya cerró (era hasta el ${lim}, día anterior).`,
     });
   }
+
+  const tarifa = await tarifaVigente(fecha);
+  const precio = { DESAYUNO: tarifa.desayuno, ALMUERZO: tarifa.almuerzo, MERIENDA: tarifa.merienda };
+  const deseado = { DESAYUNO: !!desayuno, ALMUERZO: !!almuerzo, MERIENDA: !!merienda };
+
+  const conn = await pool.getConnection();
   try {
-    await pool.query(`
+    await conn.beginTransaction();
+
+    const [uRows] = await conn.query('SELECT saldo FROM usuario WHERE id_usuario = ? FOR UPDATE', [idUsuario]);
+    const saldo = Number(uRows[0].saldo);
+
+    // Tickets vigentes (no anulados) de esa fecha
+    const [tk] = await conn.query(
+      `SELECT id_ticket, comida, precio, estado FROM ticket
+       WHERE id_usuario = ? AND fecha = ? AND estado <> 'ANULADO'`, [idUsuario, fecha]);
+    const existente = {};
+    tk.forEach((t) => { existente[t.comida] = t; });
+
+    // Calcular cobro (comidas nuevas) y reembolso (comidas quitadas, aún no consumidas)
+    let cobro = 0, reembolso = 0;
+    for (const c of COMIDAS) {
+      const ex = existente[c];
+      if (deseado[c] && !ex) cobro += Number(precio[c]);
+      else if (!deseado[c] && ex && ex.estado === 'ACTIVO') reembolso += Number(ex.precio);
+    }
+
+    if (saldo - cobro + reembolso < 0) {
+      await conn.rollback();
+      return res.status(400).json({
+        error: `Saldo insuficiente. La reserva cuesta ${redondear(cobro)} y tu saldo es ${redondear(saldo)}. Pide una recarga al tesorero.`,
+      });
+    }
+
+    // Aplicar cambios en los tickets
+    for (const c of COMIDAS) {
+      const ex = existente[c];
+      if (deseado[c] && !ex) {
+        const token = crypto.randomBytes(16).toString('hex');
+        await conn.query(
+          'INSERT INTO ticket (token, id_usuario, fecha, comida, precio) VALUES (?,?,?,?,?)',
+          [token, idUsuario, fecha, c, precio[c]]);
+      } else if (!deseado[c] && ex && ex.estado === 'ACTIVO') {
+        await conn.query("UPDATE ticket SET estado='ANULADO' WHERE id_ticket = ?", [ex.id_ticket]);
+      }
+    }
+
+    const nuevoSaldo = redondear(saldo - cobro + reembolso);
+    await conn.query('UPDATE usuario SET saldo = ? WHERE id_usuario = ?', [nuevoSaldo, idUsuario]);
+
+    // Reflejar en confronta (para el forecast del ranchero). Una comida ya
+    // consumida (CANJEADO) queda como reservada aunque se intente quitar.
+    const flag = {};
+    for (const c of COMIDAS) {
+      const ex = existente[c];
+      flag[c] = (deseado[c] || (ex && ex.estado === 'CANJEADO')) ? 1 : 0;
+    }
+    await conn.query(`
       INSERT INTO confronta
         (id_personal, fecha, estado, desayuno, almuerzo, merienda, novedad, id_usuario)
       VALUES (?,?,?,?,?,?,?,?)
@@ -681,62 +744,49 @@ app.post('/api/reserva', verificarToken, async (req, res) => {
         estado=VALUES(estado), desayuno=VALUES(desayuno),
         almuerzo=VALUES(almuerzo), merienda=VALUES(merienda),
         novedad=VALUES(novedad), id_usuario=VALUES(id_usuario)`,
-      [req.usuario.id_personal, fecha, estado || 'PRESENTE',
-       desayuno ? 1 : 0, almuerzo ? 1 : 0, merienda ? 1 : 0,
-       novedad || null, req.usuario.id_usuario]);
-    await auditar(req.usuario.id_usuario, 'RESERVA', `Reserva ${fecha}`);
-    res.json({ ok: true, fecha });
+      [idPersonal, fecha, estado || 'PRESENTE',
+       flag.DESAYUNO, flag.ALMUERZO, flag.MERIENDA, novedad || null, idUsuario]);
+
+    await conn.commit();
+    await auditar(idUsuario, 'RESERVA',
+      `Reserva ${fecha} cobro $${redondear(cobro)} reembolso $${redondear(reembolso)}`);
+    res.json({
+      ok: true, fecha,
+      cobrado: redondear(cobro),
+      reembolsado: redondear(reembolso),
+      saldo: nuevoSaldo,
+    });
   } catch (e) {
+    await conn.rollback();
     console.error(e);
     res.status(500).json({ error: 'Error al reservar' });
+  } finally {
+    conn.release();
   }
 });
 
 // ===============================================================
 // QR de un solo uso: generar (usuario) y canjear (ranchero/admin)
 // ===============================================================
+// El QR es el TICKET de una comida YA reservada y pagada. No cobra nada:
+// solo entrega el código para pasar al rancho.
 app.post('/api/qr', verificarToken, async (req, res) => {
   const { fecha, comida } = req.body;
   if (!req.usuario.id_personal)
     return res.status(400).json({ error: 'Tu cuenta no está vinculada a una ficha de personal' });
-  if (!fecha || !['DESAYUNO', 'ALMUERZO', 'MERIENDA'].includes(comida))
+  if (!fecha || !COMIDAS.includes(comida))
     return res.status(400).json({ error: 'Fecha o comida inválida' });
 
   try {
-    // 1) ¿reservó esa comida en esa fecha?
-    const col = columnaComida(comida);
-    const [rsv] = await pool.query(
-      `SELECT ${col} AS reservado FROM confronta WHERE id_personal = ? AND fecha = ?`,
-      [req.usuario.id_personal, fecha]);
-    if (rsv.length === 0 || !rsv[0].reservado)
-      return res.status(400).json({ error: `No reservaste ${comida.toLowerCase()} para esa fecha` });
-
-    // 2) ¿ya hay ticket para esa comida/fecha?
     const [tk] = await pool.query(
-      `SELECT id_ticket, token, precio, estado FROM ticket
+      `SELECT token, precio, estado FROM ticket
        WHERE id_usuario = ? AND fecha = ? AND comida = ? AND estado <> 'ANULADO'`,
       [req.usuario.id_usuario, fecha, comida]);
-    if (tk.length > 0) {
-      if (tk[0].estado === 'CANJEADO')
-        return res.status(409).json({ error: 'Ya consumiste esa comida (QR usado)' });
-      // ACTIVO: devuelve el mismo QR
-      return res.json({ token: tk[0].token, comida, fecha, precio: Number(tk[0].precio) });
-    }
-
-    // 3) precio y saldo
-    const tarifa = await tarifaVigente(fecha);
-    const precio = precioComida(tarifa, comida);
-    const [u] = await pool.query('SELECT saldo FROM usuario WHERE id_usuario = ?', [req.usuario.id_usuario]);
-    if (Number(u[0].saldo) < precio)
-      return res.status(400).json({ error: `Saldo insuficiente. Necesitas ${redondear(precio)} y tienes ${Number(u[0].saldo)}` });
-
-    // 4) crea el ticket
-    const token = crypto.randomBytes(16).toString('hex');
-    await pool.query(
-      `INSERT INTO ticket (token, id_usuario, fecha, comida, precio) VALUES (?,?,?,?,?)`,
-      [token, req.usuario.id_usuario, fecha, comida, precio]);
-    await auditar(req.usuario.id_usuario, 'QR', `Generó QR ${comida} ${fecha}`);
-    res.json({ token, comida, fecha, precio });
+    if (tk.length === 0)
+      return res.status(400).json({ error: `No reservaste ${comida.toLowerCase()} para esa fecha (recuerda que la reserva se paga al hacerla)` });
+    if (tk[0].estado === 'CANJEADO')
+      return res.status(409).json({ error: 'Ya usaste esta comida (QR canjeado)' });
+    res.json({ token: tk[0].token, comida, fecha, precio: Number(tk[0].precio) });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error al generar el QR' });
@@ -771,16 +821,10 @@ app.post('/api/canjear', verificarToken, soloRol('RANCHERO', 'ADMIN'), async (re
       await conn.rollback();
       return res.status(400).json({ error: 'QR no disponible' });
     }
-    const [u] = await conn.query('SELECT saldo FROM usuario WHERE id_usuario = ? FOR UPDATE', [t.id_usuario]);
-    if (Number(u[0].saldo) < Number(t.precio)) {
-      await conn.rollback();
-      return res.status(400).json({ error: 'El comensal no tiene saldo suficiente' });
-    }
-    await conn.query('UPDATE usuario SET saldo = saldo - ? WHERE id_usuario = ?', [t.precio, t.id_usuario]);
+    // La comida ya se pagó al reservar: el canje solo marca la entrada.
     await conn.query(
       `UPDATE ticket SET estado='CANJEADO', canjeado_en=NOW(), id_canjeador=? WHERE id_ticket=?`,
       [req.usuario.id_usuario, t.id_ticket]);
-    const [u2] = await conn.query('SELECT saldo FROM usuario WHERE id_usuario = ?', [t.id_usuario]);
     await conn.commit();
     await auditar(req.usuario.id_usuario, 'CANJE', `Canjeó ${t.comida} de ${t.nombres} ${t.apellidos}`);
     res.json({
@@ -790,7 +834,6 @@ app.post('/api/canjear', verificarToken, soloRol('RANCHERO', 'ADMIN'), async (re
       comida: t.comida,
       fecha: t.fecha,
       monto: Number(t.precio),
-      saldo_restante: Number(u2[0].saldo),
     });
   } catch (e) {
     await conn.rollback();
@@ -969,7 +1012,7 @@ app.get('/api/kpis', verificarToken, soloRol('ADMIN'), async (_req, res) => {
   const [[recmes]] = await pool.query(
     'SELECT COALESCE(SUM(monto),0) m FROM recarga WHERE YEAR(fecha_hora)=? AND MONTH(fecha_hora)=?', [anio, mes]);
   const [[consmes]] = await pool.query(
-    "SELECT COALESCE(SUM(precio),0) m FROM ticket WHERE estado='CANJEADO' AND YEAR(fecha)=? AND MONTH(fecha)=?", [anio, mes]);
+    "SELECT COALESCE(SUM(precio),0) m FROM ticket WHERE estado IN ('ACTIVO','CANJEADO') AND YEAR(creado_en)=? AND MONTH(creado_en)=?", [anio, mes]);
 
   const reservadasHoy = Number(rsv.r);
   const consumidasHoy = Number(cons.c);
@@ -1018,8 +1061,8 @@ app.get('/api/reportes/mi-consumo.xlsx', verificarToken, async (req, res) => {
     SELECT tipo, monto, fecha_hora, comida FROM (
       SELECT 'RECARGA' tipo, monto, fecha_hora, NULL comida FROM recarga WHERE id_usuario = ?
       UNION ALL
-      SELECT 'CONSUMO' tipo, (-precio) monto, canjeado_en fecha_hora, comida FROM ticket
-        WHERE id_usuario = ? AND estado='CANJEADO'
+      SELECT 'CONSUMO' tipo, (-precio) monto, creado_en fecha_hora, comida FROM ticket
+        WHERE id_usuario = ? AND estado IN ('ACTIVO','CANJEADO')
     ) t ORDER BY fecha_hora DESC`, [req.usuario.id_usuario, req.usuario.id_usuario]);
 
   const wb = new ExcelJS.Workbook();

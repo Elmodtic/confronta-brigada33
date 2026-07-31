@@ -5,7 +5,8 @@
         <item name="colorPrimaryDark">@color/verde_militar_oscuro</item>
         <item name="colorOnPrimary">@color/blanco</item>
         <item name="colorSecondary">@color/dorado</item>
-        <item name="colorOnSecondary">@color/negro</item>
-        <item name="android:statusBarColor">@color/verde_militar_oscuro</item>
+        <item name="colorOnSecondary">@color/blanco</item>
+        <!-- Barra de estado negra: aspecto moderno -->
+        <item name="android:statusBarColor">@color/negro</item>
     </style>
 </resources>

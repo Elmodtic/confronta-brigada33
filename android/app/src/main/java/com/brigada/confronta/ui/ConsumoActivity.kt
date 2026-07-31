@@ -116,7 +116,13 @@ class ConsumoActivity : AppCompatActivity() {
                         novedad = if (novedad.isEmpty()) null else novedad
                     ))
                 if (resp.isSuccessful && resp.body() != null) {
-                    toast("Reserva guardada para $fecha")
+                    val r = resp.body()!!
+                    val msg = when {
+                        r.cobrado > 0 -> "Reservado y pagado: se descontó ${money(r.cobrado)}. Saldo: ${money(r.saldo)}"
+                        r.reembolsado > 0 -> "Reserva actualizada: se devolvió ${money(r.reembolsado)}. Saldo: ${money(r.saldo)}"
+                        else -> "Reserva actualizada. Saldo: ${money(r.saldo)}"
+                    }
+                    toast(msg)
                     anio = fechaSel.get(Calendar.YEAR)
                     mes = fechaSel.get(Calendar.MONTH) + 1
                     cargarMes()

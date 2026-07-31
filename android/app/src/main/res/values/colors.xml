@@ -1,14 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Verde militar -->
-    <color name="verde_militar">#2E5A34</color>
-    <color name="verde_militar_oscuro">#1E3D23</color>
-    <color name="verde_militar_claro">#4E7A54</color>
-    <color name="dorado">#C8A24B</color>
+    <!-- Identidad institucional del Ejército: rojo, plomo, blanco y negro.
+         (Se conservan los nombres para no tocar todas las pantallas.) -->
+
+    <!-- "verde_militar" = ahora ROJO institucional (color primario) -->
+    <color name="verde_militar">#C1121F</color>
+    <color name="verde_militar_oscuro">#8A0E17</color>
+    <color name="verde_militar_claro">#E24B54</color>
+
+    <!-- "dorado" = ahora PLOMO (acento secundario) -->
+    <color name="dorado">#52565C</color>
+
     <color name="blanco">#FFFFFF</color>
-    <color name="negro">#101410</color>
-    <color name="gris_fondo">#F2F4F1</color>
-    <color name="gris_texto">#5B605A</color>
-    <color name="rojo_novedad">#B3261E</color>
-    <color name="ic_launcher_background">#2E5A34</color>
+    <color name="negro">#14161A</color>
+    <color name="gris_fondo">#F4F5F7</color>
+    <color name="gris_texto">#5B5F66</color>
+    <color name="rojo_novedad">#8A0E17</color>
+
+    <!-- Fondo oscuro del ícono (combina con la medalla del Batallón) -->
+    <color name="ic_launcher_background">#14161A</color>
 </resources>

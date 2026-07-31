@@ -217,7 +217,7 @@ data class PersonaSaldo(
 data class RecargaReq(val cedula: String, val monto: Double)
 data class RecargaResp(val ok: Boolean, val saldo: Double)
 
-// ---- Reserva ----
+// ---- Reserva (se cobra al reservar) ----
 data class ReservaReq(
     val fecha: String,
     val estado: String,
@@ -225,6 +225,14 @@ data class ReservaReq(
     val almuerzo: Boolean,
     val merienda: Boolean,
     val novedad: String?
+)
+
+data class ReservaResp(
+    val ok: Boolean,
+    val fecha: String?,
+    val cobrado: Double,
+    val reembolsado: Double,
+    val saldo: Double
 )
 
 // ---- QR ----
@@ -238,8 +246,7 @@ data class CanjeResp(
     val unidad: String?,
     val comida: String?,
     val fecha: String?,
-    val monto: Double,
-    val saldo_restante: Double
+    val monto: Double
 )
 
 // ---- Perfil ----

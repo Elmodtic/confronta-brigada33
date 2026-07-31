@@ -53,8 +53,8 @@ class CanjeActivity : AppCompatActivity() {
                     val r = resp.body()!!
                     b.tvDetalle.text =
                         "Comensal: ${r.persona}\nUnidad: ${r.unidad ?: "-"}\n" +
-                        "Comida: ${r.comida}\nDescontado: ${money(r.monto)}\n" +
-                        "Saldo restante: ${money(r.saldo_restante)}"
+                        "Comida: ${r.comida}  (${money(r.monto)})\n" +
+                        "Estado: PAGADA ✓ — acceso autorizado al rancho"
                     b.cardResultado.visibility = View.VISIBLE
                     b.etCodigo.text = null
                 } else {

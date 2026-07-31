@@ -38,3 +38,6 @@ fabric.properties
 
 # Documentacion interna (no se sube; ver docs/CONTEXTO_TECNICO.md)
 CLAUDE.md
+
+# Notas locales con datos sensibles (nunca se sube)
+Credenciales.txt
