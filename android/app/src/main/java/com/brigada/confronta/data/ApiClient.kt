@@ -17,7 +17,7 @@ object ApiClient {
     //
     // Requiere que el puerto 3000 esté abierto en el Firewall de Windows
     // (usa el archivo abrir_firewall_puerto3000.bat en la raíz del proyecto).
-    const val BASE_URL = "http://10.20.91.170:3000/"
+    const val BASE_URL = "http://192.168.1.104:3000/"
 
     val api: Api by lazy {
         val logging = HttpLoggingInterceptor().apply {
