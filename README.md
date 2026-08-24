@@ -130,3 +130,17 @@ completo de roles, endpoints y modelo de datos. El login del personal es por
 Si al clonar en la PC nueva falta alguno de estos archivos "de plantilla"
 (`.env.example`), es intencional: cópialo y complétalo tú con tus propios
 valores, nunca reutilices `JWT_SECRET` de otra máquina.
+
+### 9. Convención de commits y trazabilidad
+
+Todo cambio no trivial sigue este flujo, auditado en `CHECKLIST_AUDITORIA.md`:
+
+1. Se crea un **issue** describiendo el hallazgo o la funcionalidad.
+2. Se crea una **rama** con prefijo `feature/`, `audit/`, `docs/` o `fix/`.
+3. Los **commits** usan el formato `tipo: descripción (#issue)`, con tipos:
+   `feat`, `fix`, `docs`, `chore`, `audit`.
+4. Se abre un **Pull Request** hacia `main` usando la plantilla de
+   `.github/pull_request_template.md`, referenciando el issue con
+   `Closes #N` o `Refs #N`.
+5. El release se etiqueta con **SemVer** (`vMAJOR.MINOR.PATCH`) únicamente
+   desde `main`, después del merge, con notas de la versión.
