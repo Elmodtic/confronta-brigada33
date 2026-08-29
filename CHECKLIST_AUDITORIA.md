@@ -9,6 +9,11 @@ Este checklist se aplica en cada Pull Request antes de aprobar el merge a `main`
 - [ ] `backend/.env.example` existe y está sincronizado con las variables reales usadas en `server.js`.
 - [ ] `LICENSE` presente.
 - [ ] Documentación técnica (`docs/`) refleja los cambios del PR, si aplica.
+- [ ] **Sincronía docs ↔ endpoints (CHG-02):** si el PR agrega, elimina o cambia
+      la ruta o el rol de un endpoint, `docs/CONTEXTO_TECNICO.md` se actualiza en
+      el **mismo** PR. Verificación rápida:
+      `grep -oE "app\.(get|post|put|delete)\('/api/[^']*'" backend/server.js`
+      y contrastar contra la sección de endpoints de la documentación.
 
 ## 2. Auditoría funcional (requisitos)
 - [ ] El PR referencia el/los requisito(s) (REQ-xx) o issue(s) que valida o modifica.
