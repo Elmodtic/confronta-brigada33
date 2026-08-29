@@ -56,6 +56,8 @@ Consumo (autoservicio con `/api/mi/...`, o por persona para ADMIN/OPERADOR):
 - `GET /api/mi/liquidacion/:anio/:mes` — desglose y total a pagar del mes.
 - `GET /api/personal`, `GET /api/confronta/:fecha`, `GET /api/reporte/:fecha`
   — consultas para gestores (ADMIN/OPERADOR).
+- `GET /api/liquidacion/:idPersonal/:anio/:mes` — misma liquidación mensual que
+  `/api/mi/liquidacion`, pero de una persona indicada (ADMIN/OPERADOR).
 
 El costo se calcula con la tarifa vigente a la fecha (desayuno 1.90, almuerzo
 3.00, merienda 1.75).
