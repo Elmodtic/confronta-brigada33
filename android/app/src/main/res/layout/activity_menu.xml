@@ -91,12 +91,28 @@
             android:textSize="15sp" app:cornerRadius="12dp"
             android:visibility="gone" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnTesoreria"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:paddingVertical="16dp"
+            android:text="Tesorería (caja y entregas al rancho)"
+            android:textSize="15sp" app:cornerRadius="12dp"
+            android:visibility="gone" />
+
         <!-- Ranchero / Admin -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnCanje"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginTop="10dp" android:paddingVertical="16dp"
             android:text="📷  Canjear QR (comedor)"
+            android:textSize="15sp" app:cornerRadius="12dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnFondoRancho"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:paddingVertical="16dp"
+            android:text="Fondo del rancho (dinero para cocinar)"
             android:textSize="15sp" app:cornerRadius="12dp"
             android:visibility="gone" />
 

@@ -18,6 +18,10 @@ interface Api {
     @POST("api/registro")
     suspend fun registro(@Body body: RegistroReq): Response<RegistroResp>
 
+    // Invalida el token actual en el servidor (lista negra en memoria).
+    @POST("api/logout")
+    suspend fun logout(): Response<OkResp>
+
     @GET("api/olvido/pregunta")
     suspend fun pregunta(@Query("username") username: String): Response<PreguntaResp>
 
@@ -53,7 +57,10 @@ interface Api {
 
     // ---- Administración (root) ----
     @GET("api/usuarios")
-    suspend fun usuarios(): Response<List<UsuarioAdmin>>
+    suspend fun usuarios(
+        @Query("buscar") buscar: String? = null,
+        @Query("limite") limite: Int? = null
+    ): Response<UsuariosResp>
 
     @PUT("api/usuarios/{id}")
     suspend fun actualizarUsuario(@Path("id") id: Int, @Body body: UpdateUsuarioReq): Response<OkResp>
@@ -62,7 +69,12 @@ interface Api {
     suspend fun resetPasswordUsuario(@Path("id") id: Int, @Body body: AdminPassReq): Response<OkResp>
 
     @GET("api/auditoria")
-    suspend fun auditoria(): Response<List<AuditoriaItem>>
+    suspend fun auditoria(
+        @Query("fecha") fecha: String? = null,
+        @Query("anio") anio: Int? = null,
+        @Query("mes") mes: Int? = null,
+        @Query("buscar") buscar: String? = null
+    ): Response<AuditoriaResp>
 
     // ---- Producción (ranchero) ----
     @GET("api/produccion/{fecha}")
@@ -70,7 +82,11 @@ interface Api {
 
     // ---- KPIs (Gobierno de TI) ----
     @GET("api/kpis")
-    suspend fun kpis(): Response<Kpis>
+    suspend fun kpis(
+        @Query("fecha") fecha: String? = null,
+        @Query("anio") anio: Int? = null,
+        @Query("mes") mes: Int? = null
+    ): Response<KpisPeriodo>
 
     // ---- Reportes Excel ----
     @Streaming @GET("api/reportes/mi-consumo.xlsx")
@@ -106,4 +122,36 @@ interface Api {
 
     @POST("api/canjear")
     suspend fun canjear(@Body body: CanjeReq): Response<CanjeResp>
+
+    // ---- Tesorería: contabilidad y fondo del rancho ----
+    @GET("api/tesoreria/resumen")
+    suspend fun tesoreriaResumen(
+        @Query("fecha") fecha: String? = null,
+        @Query("anio") anio: Int? = null,
+        @Query("mes") mes: Int? = null
+    ): Response<TesoreriaResumen>
+
+    @POST("api/tesoreria/transferencias")
+    suspend fun transferirFondos(@Body body: TransferenciaReq): Response<TransferenciaResp>
+
+    @GET("api/tesoreria/transferencias")
+    suspend fun entregas(
+        @Query("anio") anio: Int? = null,
+        @Query("mes") mes: Int? = null
+    ): Response<EntregasResp>
+
+    @POST("api/tesoreria/transferencias/{id}/anular")
+    suspend fun anularEntrega(@Path("id") id: Int): Response<OkResp>
+
+    // ---- Ranchero: fondo rotativo recibido ----
+    // El ranchero escanea el QR del tesorero y confirma la recepcion
+    @POST("api/rancho/confirmar")
+    suspend fun confirmarFondo(@Body body: ConfirmarFondoReq): Response<ConfirmarFondoResp>
+
+    @GET("api/rancho/fondo")
+    suspend fun fondoRancho(
+        @Query("fecha") fecha: String? = null,
+        @Query("anio") anio: Int? = null,
+        @Query("mes") mes: Int? = null
+    ): Response<FondoRancho>
 }

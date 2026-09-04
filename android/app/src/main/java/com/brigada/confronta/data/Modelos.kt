@@ -160,7 +160,9 @@ data class UsuarioAdmin(
     val nombres: String?,
     val apellidos: String?,
     val grado: String?,
-    val unidad: String?
+    val unidad: String?,
+    val cedula: String? = null,
+    val saldo: Double = 0.0
 )
 
 data class UpdateUsuarioReq(val rol: String? = null, val activo: Boolean? = null)
@@ -260,4 +262,186 @@ data class Perfil(
     val unidad: String?,
     val username: String?,
     val rol: String?
+)
+
+// ===================================================================
+// GESTIÓN DE USUARIOS — respuesta paginada con búsqueda en el servidor
+// ===================================================================
+data class UsuariosResp(
+    val total_registrados: Int,
+    val mostrados: Int,
+    val limite: Int,
+    val buscar: String?,
+    val usuarios: List<UsuarioAdmin>
+)
+
+// ===================================================================
+// INDICADORES — bloque reutilizable para el día y para el mes
+// ===================================================================
+data class BloqueKpi(
+    val reservas: Int,
+    val consumos: Int,
+    val cumplimiento_pct: Int,
+    val desperdicio: Int,
+    val costo_consumido: Double,
+    val recaudado: Double,
+    val transferido: Double
+)
+
+data class KpisPeriodo(
+    val fecha: String,
+    val anio: Int,
+    val mes: Int,
+    val mes_nombre: String,
+    val personal_activo: Int,
+    val usuarios_por_rol: List<RolConteo>,
+    val saldo_en_circulacion: Double,
+    val dia: BloqueKpi,
+    val mes_resumen: BloqueKpi
+)
+
+// ===================================================================
+// TESORERÍA — contabilidad y fondo rotativo del rancho
+// ===================================================================
+data class MovimientoCaja(
+    val recaudado: Double,
+    val recargas: Int,
+    val transferido: Double,
+    val entregas: Int,
+    val neto: Double
+)
+
+data class Acumulado(
+    val recaudado: Double,
+    val transferido: Double,
+    val en_transito: Double,
+    val pendientes: Int,
+    val caja: Double
+)
+
+data class RancheroFondo(
+    val id_usuario: Int,
+    val cedula: String?,
+    val persona: String,
+    val saldo_comensal: Double,
+    val fondo_rancho: Double,
+    val en_transito: Double
+)
+
+data class TesoreriaResumen(
+    val fecha: String,
+    val anio: Int,
+    val mes: Int,
+    val mes_nombre: String,
+    val dia: MovimientoCaja,
+    val mes_resumen: MovimientoCaja,
+    val acumulado: Acumulado,
+    val mi_saldo_comensal: Double,
+    val rancheros: List<RancheroFondo>
+)
+
+data class TransferenciaReq(
+    val id_ranchero: Int,
+    val monto: Double,
+    val concepto: String?
+)
+
+data class TransferenciaResp(
+    val ok: Boolean,
+    val id_transferencia: Int?,
+    val token: String?,
+    val estado: String?,
+    val monto: Double,
+    val fecha_hora: String?,
+    val caja_restante: Double,
+    val mensaje: String?
+)
+
+data class EntregaItem(
+    val id_transferencia: Int,
+    val monto: Double,
+    val concepto: String?,
+    val fecha_hora: String?,
+    val estado: String?,
+    val confirmado_en: String?,
+    val anulado_en: String?,
+    val token: String?,
+    val ranchero: String?
+)
+
+data class EntregasResp(
+    val anio: Int,
+    val mes: Int,
+    val mes_nombre: String,
+    val total: Double,
+    val confirmado: Double,
+    val pendiente: Double,
+    val entregas: List<EntregaItem>
+)
+
+// ===================================================================
+// FONDO DEL RANCHO — vista del ranchero
+// ===================================================================
+data class MovimientoFondo(
+    val monto: Double,
+    val concepto: String?,
+    val fecha_hora: String?,
+    val confirmado_en: String?,
+    val estado: String?,
+    val tesorero: String?
+)
+
+data class FondoRancho(
+    val fecha: String,
+    val anio: Int,
+    val mes: Int,
+    val mes_nombre: String,
+    val saldo_comensal: Double,
+    val fondo_rancho: Double,
+    val por_confirmar: Double,
+    val entregas_por_confirmar: Int,
+    val recibido_dia: Double,
+    val entregas_dia: Int,
+    val recibido_mes: Double,
+    val entregas_mes: Int,
+    val movimientos: List<MovimientoFondo>
+)
+
+// ---- Confirmación del fondo por QR (ranchero) ----
+data class ConfirmarFondoReq(val token: String)
+
+data class ConfirmarFondoResp(
+    val ok: Boolean,
+    val id_transferencia: Int?,
+    val monto: Double,
+    val concepto: String?,
+    val entregado_en: String?,
+    val tesorero: String?,
+    val fondo_rancho: Double
+)
+
+// ---- Auditoría con filtros ----
+data class AuditoriaRegistro(
+    val id_auditoria: Int,
+    val accion: String,
+    val detalle: String?,
+    val fecha_hora: String?,
+    val username: String?,
+    val cedula: String?,
+    val persona: String?
+)
+
+data class FiltroAuditoria(
+    val fecha: String?,
+    val anio: Int?,
+    val mes: Int?,
+    val buscar: String?
+)
+
+data class AuditoriaResp(
+    val total_registros: Int,
+    val mostrados: Int,
+    val limite: Int,
+    val filtro: FiltroAuditoria,
+    val registros: List<AuditoriaRegistro>
 )

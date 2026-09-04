@@ -1,31 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
     android:background="@color/gris_fondo"
-    android:fillViewport="true">
+    android:padding="16dp">
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+    <TextView
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="Busca por cédula, nombres o apellidos. Toca un resultado para cambiar su rol, restablecer su contraseña o activarlo."
+        android:textColor="@color/texto_secundario" android:textSize="13sp"
+        android:layout_marginBottom="8dp" />
 
-        <TextView
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Toca un usuario para cambiar su rol, restablecer su contraseña o activarlo/desactivarlo."
-            android:textColor="@color/gris_texto" android:textSize="13sp"
-            android:layout_marginBottom="8dp" />
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:hint="Cédula, nombres o apellidos"
+        app:endIconMode="clear_text"
+        app:endIconTint="@color/texto_secundario">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etBuscar"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:inputType="text"
+            android:imeOptions="actionSearch"
+            android:maxLength="60" />
+    </com.google.android.material.textfield.TextInputLayout>
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnBuscar"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" android:paddingVertical="12dp"
+        android:text="Buscar" app:cornerRadius="12dp" />
+
+    <TextView
+        android:id="@+id/tvResumen"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:textColor="@color/texto_secundario" android:textSize="13sp" />
+
+    <ProgressBar
+        android:id="@+id/progreso"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_gravity="center" android:layout_marginTop="12dp"
+        android:visibility="gone" />
+
+    <ScrollView
+        android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:fillViewport="true">
         <LinearLayout
             android:id="@+id/contenedorUsuarios"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="vertical" />
-
-        <ProgressBar
-            android:id="@+id/progreso"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_gravity="center" android:layout_marginTop="16dp"
-            android:visibility="gone" />
-    </LinearLayout>
-</ScrollView>
+    </ScrollView>
+</LinearLayout>

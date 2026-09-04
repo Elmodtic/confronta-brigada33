@@ -19,12 +19,16 @@
             android:layout_marginBottom="8dp" />
 
         <com.google.android.material.textfield.TextInputLayout
+            xmlns:app="http://schemas.android.com/apk/res-auto"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:hint="Número de cédula">
+            android:hint="Número de cédula (10 dígitos)"
+            app:counterEnabled="true" app:counterMaxLength="10">
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etCedula"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:inputType="number" />
+                android:inputType="number"
+                android:maxLength="10"
+                android:digits="0123456789" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.button.MaterialButton

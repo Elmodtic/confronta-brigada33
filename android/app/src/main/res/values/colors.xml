@@ -19,4 +19,17 @@
 
     <!-- Fondo oscuro del ícono (combina con la medalla del Batallón) -->
     <color name="ic_launcher_background">#14161A</color>
+
+    <!-- ===== Legibilidad (agregado) ===== -->
+    <!-- Texto sobre fondos claros -->
+    <color name="texto_principal">#14161A</color>
+    <color name="texto_secundario">#41454B</color>
+    <color name="texto_hint">#6B7078</color>
+
+    <!-- Botones deshabilitados: visibles pero claramente inactivos -->
+    <color name="boton_desactivado_fondo">#C9CDD3</color>
+    <color name="boton_desactivado_texto">#3C4046</color>
+
+    <!-- Superficie de tarjetas y campos -->
+    <color name="superficie">#FFFFFF</color>
 </resources>

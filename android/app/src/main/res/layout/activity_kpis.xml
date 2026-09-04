@@ -16,13 +16,52 @@
             android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Indicadores de gestión" android:textStyle="bold"
             android:textSize="18sp" android:textColor="@color/verde_militar_oscuro" />
-        <TextView
-            android:id="@+id/tvFecha"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:textColor="@color/gris_texto" android:layout_marginBottom="8dp" />
 
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Elige la fecha para el corte diario. El consolidado mensual corresponde al mes de esa fecha."
+            android:textColor="@color/texto_secundario" android:textSize="13sp"
+            android:layout_marginTop="4dp" android:layout_marginBottom="8dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnFecha"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:paddingVertical="12dp"
+            android:text="Fecha" app:cornerRadius="12dp" />
+
+        <!-- Corte del día -->
+        <TextView
+            android:id="@+id/tvTituloDia"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Corte del día" android:textStyle="bold" android:textSize="16sp"
+            android:textColor="@color/verde_militar_oscuro"
+            android:layout_marginTop="18dp" />
         <LinearLayout
-            android:id="@+id/contenedor"
+            android:id="@+id/contenedorDia"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <!-- Consolidado del mes -->
+        <TextView
+            android:id="@+id/tvTituloMes"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Consolidado del mes" android:textStyle="bold" android:textSize="16sp"
+            android:textColor="@color/verde_militar_oscuro"
+            android:layout_marginTop="22dp" />
+        <LinearLayout
+            android:id="@+id/contenedorMes"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <!-- Datos generales -->
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Generales" android:textStyle="bold" android:textSize="16sp"
+            android:textColor="@color/verde_militar_oscuro"
+            android:layout_marginTop="22dp" />
+        <LinearLayout
+            android:id="@+id/contenedorGeneral"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="vertical" />
 

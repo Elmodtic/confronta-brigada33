@@ -51,6 +51,13 @@ class OlvidoActivity : AppCompatActivity() {
         if (respuesta.isEmpty() || nueva.isEmpty()) {
             toast("Completa la respuesta y la nueva contraseña"); return
         }
+        // Misma política que el backend: avisa antes de llamar al servidor
+        val errPass = validarPassword(nueva)
+        if (errPass != null) {
+            b.etNueva.error = errPass
+            b.etNueva.requestFocus()
+            toast(errPass); return
+        }
         cargando(true)
         lifecycleScope.launch {
             try {

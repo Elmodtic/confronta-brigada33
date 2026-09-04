@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/gris_fondo"
@@ -20,13 +21,16 @@
             android:textSize="16sp"
             android:layout_marginBottom="4dp" />
 
+        <!-- Solo letras: se bloquean numeros y simbolos desde el teclado -->
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:hint="Nombres">
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etNombres"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:inputType="textCapWords" />
+                android:inputType="textCapCharacters"
+                android:maxLength="60"
+                android:digits="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZáéíóúüñÁÉÍÓÚÜÑ " />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
@@ -35,22 +39,28 @@
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etApellidos"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:inputType="textCapWords" />
+                android:inputType="textCapCharacters"
+                android:maxLength="60"
+                android:digits="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZáéíóúüñÁÉÍÓÚÜÑ " />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- Cedula ecuatoriana: exactamente 10 digitos -->
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="8dp" android:hint="Cédula">
+            android:layout_marginTop="8dp" android:hint="Cédula (10 dígitos)"
+            app:counterEnabled="true" app:counterMaxLength="10">
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etCedula"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:inputType="number" />
+                android:inputType="number"
+                android:maxLength="10"
+                android:digits="0123456789" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <TextView
             android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Grado" android:layout_marginTop="12dp"
-            android:textColor="@color/gris_texto" />
+            android:textColor="@color/texto_secundario" />
         <Spinner
             android:id="@+id/spGrado"
             android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -59,7 +69,7 @@
         <TextView
             android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Unidad" android:layout_marginTop="8dp"
-            android:textColor="@color/gris_texto" />
+            android:textColor="@color/texto_secundario" />
         <Spinner
             android:id="@+id/spUnidad"
             android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -74,22 +84,28 @@
         <TextView
             android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Iniciarás sesión con tu número de cédula."
-            android:textColor="@color/gris_texto" android:textSize="13sp"
+            android:textColor="@color/texto_secundario" android:textSize="13sp"
             android:layout_marginBottom="4dp" />
 
+        <!-- endIconMode=password_toggle: el ojito para ver la contraseña -->
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="4dp" android:hint="Contraseña">
+            android:layout_marginTop="4dp" android:hint="Contraseña"
+            app:endIconMode="password_toggle"
+            app:endIconTint="@color/texto_secundario"
+            app:helperTextEnabled="true"
+            app:helperText="Mínimo 10 caracteres, con mayúscula, minúscula, número y símbolo. Sin espacios.">
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etPassword"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:inputType="textPassword" />
+                android:inputType="textPassword"
+                android:maxLength="72" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <TextView
             android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Pregunta de seguridad (para recuperar tu clave)"
-            android:layout_marginTop="12dp" android:textColor="@color/gris_texto" />
+            android:layout_marginTop="12dp" android:textColor="@color/texto_secundario" />
         <Spinner
             android:id="@+id/spPregunta"
             android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -102,7 +118,8 @@
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etRespuesta"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:inputType="text" />
+                android:inputType="text"
+                android:maxLength="60" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.button.MaterialButton

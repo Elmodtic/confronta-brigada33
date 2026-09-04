@@ -42,3 +42,56 @@ fun errorDeApi(resp: Response<*>): String {
         "Error ${resp.code()}"
     }
 }
+
+// ===================================================================
+// VALIDACIONES DE ENTRADA (mismo criterio que aplica el backend)
+// ===================================================================
+
+/** Nombres y apellidos: solo letras (con tildes y ñ) y espacios. */
+val RE_SOLO_LETRAS = Regex("^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]+(?: [a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]+)*$")
+
+/** Cédula ecuatoriana: exactamente 10 dígitos. */
+val RE_CEDULA = Regex("""^\d{10}$""")
+
+/**
+ * Política de contraseñas idéntica a la del servidor (server.js):
+ * 10–72 caracteres, sin espacios, con minúscula, mayúscula, número y símbolo.
+ * Devuelve null si es válida, o el mensaje de error.
+ */
+fun validarPassword(pwd: String): String? {
+    if (pwd.length < 10) return "La contraseña debe tener al menos 10 caracteres"
+    if (pwd.length > 72) return "La contraseña no puede superar los 72 caracteres"
+    if (pwd.any { it.isWhitespace() }) return "La contraseña no puede contener espacios"
+    if (!pwd.any { it.isLowerCase() }) return "Falta una letra minúscula"
+    if (!pwd.any { it.isUpperCase() }) return "Falta una letra mayúscula"
+    if (!pwd.any { it.isDigit() }) return "Falta un número"
+    if (!pwd.any { !it.isLetterOrDigit() && !it.isWhitespace() }) return "Falta un carácter especial (ej. * ! # $)"
+    return null
+}
+
+// ===================================================================
+// FECHAS
+// ===================================================================
+
+/**
+ * Convierte la marca de tiempo que devuelve la API (ISO-8601 en UTC,
+ * p. ej. "2026-09-04T18:04:58.000Z") a la hora local del dispositivo,
+ * en formato "dd/MM/yyyy HH:mm". Si no se puede interpretar, devuelve
+ * el texto original para no perder información.
+ */
+fun fechaHora(iso: String?): String {
+    val t = iso?.trim().orEmpty()
+    if (t.isEmpty()) return "-"
+    return try {
+        val instante = java.time.Instant.parse(t)
+        java.time.LocalDateTime.ofInstant(instante, java.time.ZoneId.systemDefault())
+            .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
+    } catch (e: Exception) {
+        try {
+            java.time.LocalDateTime.parse(t.replace(" ", "T").substringBefore("."))
+                .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
+        } catch (e2: Exception) {
+            t
+        }
+    }
+}

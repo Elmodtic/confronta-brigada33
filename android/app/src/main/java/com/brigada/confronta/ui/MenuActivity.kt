@@ -34,9 +34,16 @@ class MenuActivity : AppCompatActivity() {
         b.btnEstado.isEnabled = tieneFicha
         b.tvAvisoFicha.visibility = if (tieneFicha) View.GONE else View.VISIBLE
 
-        // Permisos adicionales según rol
-        b.btnRecargar.visibility = if (esTesorero || esAdmin) View.VISIBLE else View.GONE
-        b.btnCanje.visibility = if (esRanchero || esAdmin) View.VISIBLE else View.GONE
+        // Permisos por rol: separación estricta de funciones.
+        //  - Recargar saldo  -> SOLO TESORERO (maneja el dinero y su contabilidad)
+        //  - Canjear QR      -> SOLO RANCHERO (controla la entrada al comedor)
+        //  - El ADMIN administra usuarios, roles y claves; NO mueve dinero ni
+        //    autoriza comidas. Así ningún perfil concentra ambas funciones.
+        b.btnRecargar.visibility = if (esTesorero) View.VISIBLE else View.GONE
+        b.btnTesoreria.visibility = if (esTesorero) View.VISIBLE else View.GONE
+        b.btnCanje.visibility = if (esRanchero) View.VISIBLE else View.GONE
+        b.btnFondoRancho.visibility = if (esRanchero) View.VISIBLE else View.GONE
+        // Producción es solo consulta (cuántos platos cocinar), no una acción.
         b.btnProduccion.visibility = if (esRanchero || esAdmin) View.VISIBLE else View.GONE
 
         val visAdmin = if (esAdmin) View.VISIBLE else View.GONE
@@ -50,7 +57,9 @@ class MenuActivity : AppCompatActivity() {
         b.btnQR.setOnClickListener { abrir(QrActivity::class.java) }
         b.btnEstado.setOnClickListener { abrir(EstadoCuentaActivity::class.java) }
         b.btnRecargar.setOnClickListener { abrir(RecargaActivity::class.java) }
+        b.btnTesoreria.setOnClickListener { abrir(TesoreriaActivity::class.java) }
         b.btnCanje.setOnClickListener { abrir(CanjeActivity::class.java) }
+        b.btnFondoRancho.setOnClickListener { abrir(FondoRanchoActivity::class.java) }
         b.btnProduccion.setOnClickListener { abrir(ProduccionActivity::class.java) }
         b.btnUsuarios.setOnClickListener { abrir(UsuariosActivity::class.java) }
         b.btnAuditoria.setOnClickListener { abrir(AuditoriaActivity::class.java) }
@@ -87,10 +96,16 @@ class MenuActivity : AppCompatActivity() {
     private fun abrir(clase: Class<*>) = startActivity(Intent(this, clase))
 
     private fun cerrarSesion() {
-        Sesion.cerrar()
-        val i = Intent(this, LoginActivity::class.java)
-        i.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        startActivity(i)
-        finish()
+        b.btnCerrar.isEnabled = false
+        lifecycleScope.launch {
+            // Invalida el token en el servidor (lista negra). Si no hay red,
+            // igual se limpia la sesión local: el token caduca solo en 15 min.
+            try { ApiClient.api.logout() } catch (_: Exception) { }
+            Sesion.cerrar()
+            val i = Intent(this@MenuActivity, LoginActivity::class.java)
+            i.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            startActivity(i)
+            finish()
+        }
     }
 }

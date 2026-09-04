@@ -58,8 +58,10 @@ class RegistroActivity : AppCompatActivity() {
     }
 
     private fun registrar() {
-        val nombres = b.etNombres.text?.toString()?.trim().orEmpty()
-        val apellidos = b.etApellidos.text?.toString()?.trim().orEmpty()
+        // Siempre en MAYUSCULAS: evita que unos se registren "Juan" y otros
+        // "JUAN". Se normaliza aqui, no solo en el teclado.
+        val nombres = b.etNombres.text?.toString()?.trim().orEmpty().uppercase()
+        val apellidos = b.etApellidos.text?.toString()?.trim().orEmpty().uppercase()
         val cedula = b.etCedula.text?.toString()?.trim().orEmpty()
         val pass = b.etPassword.text?.toString().orEmpty()
         val respuesta = b.etRespuesta.text?.toString()?.trim().orEmpty()
@@ -67,6 +69,34 @@ class RegistroActivity : AppCompatActivity() {
 
         if (nombres.isEmpty() || apellidos.isEmpty() || cedula.isEmpty() || pass.isEmpty()) {
             toast("Completa nombres, apellidos, cédula y contraseña")
+            return
+        }
+        // Cédula ecuatoriana: exactamente 10 dígitos
+        if (!cedula.matches(RE_CEDULA)) {
+            b.etCedula.error = "La cédula debe tener exactamente 10 dígitos"
+            b.etCedula.requestFocus()
+            toast("La cédula debe tener exactamente 10 dígitos")
+            return
+        }
+        // Nombres y apellidos: solo letras y espacios (sin números ni símbolos)
+        if (!nombres.matches(RE_SOLO_LETRAS)) {
+            b.etNombres.error = "Solo letras, sin números ni símbolos"
+            b.etNombres.requestFocus()
+            toast("Los nombres solo pueden contener letras")
+            return
+        }
+        if (!apellidos.matches(RE_SOLO_LETRAS)) {
+            b.etApellidos.error = "Solo letras, sin números ni símbolos"
+            b.etApellidos.requestFocus()
+            toast("Los apellidos solo pueden contener letras")
+            return
+        }
+        // Misma política que valida el backend: evita un viaje al servidor
+        val errPass = validarPassword(pass)
+        if (errPass != null) {
+            b.etPassword.error = errPass
+            b.etPassword.requestFocus()
+            toast(errPass)
             return
         }
         if (grados.isEmpty() || unidades.isEmpty()) {

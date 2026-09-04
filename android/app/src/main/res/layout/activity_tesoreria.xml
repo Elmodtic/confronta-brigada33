@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/gris_fondo"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Caja disponible -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            app:cardCornerRadius="14dp" app:cardElevation="3dp"
+            app:cardBackgroundColor="@color/verde_militar">
+            <LinearLayout
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="16dp">
+                <TextView
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Caja disponible (recaudado − entregado)"
+                    android:textColor="@color/blanco" android:textSize="13sp" />
+                <TextView
+                    android:id="@+id/tvCaja"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:textColor="@color/blanco"
+                    android:textSize="32sp" android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/tvAcumulado"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textColor="@color/blanco" android:textSize="13sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnFecha"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="14dp" android:paddingVertical="12dp"
+            android:text="Fecha" app:cornerRadius="12dp" />
+
+        <TextView
+            android:id="@+id/tvTituloDia"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Movimiento del día" android:textStyle="bold" android:textSize="16sp"
+            android:textColor="@color/verde_militar_oscuro" android:layout_marginTop="16dp" />
+        <LinearLayout
+            android:id="@+id/contenedorDia"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <TextView
+            android:id="@+id/tvTituloMes"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Consolidado del mes" android:textStyle="bold" android:textSize="16sp"
+            android:textColor="@color/verde_militar_oscuro" android:layout_marginTop="20dp" />
+        <LinearLayout
+            android:id="@+id/contenedorMes"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <!-- Entrega de fondos al ranchero -->
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Entregar fondos al ranchero" android:textStyle="bold" android:textSize="16sp"
+            android:textColor="@color/verde_militar_oscuro" android:layout_marginTop="22dp" />
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="El dinero entregado sale de tu caja y pasa al fondo del rancho para la compra de víveres."
+            android:textColor="@color/texto_secundario" android:textSize="13sp"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Ranchero" android:textColor="@color/texto_secundario" />
+        <Spinner
+            android:id="@+id/spRanchero"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:minHeight="48dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:hint="Monto a entregar">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etMonto"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:inputType="numberDecimal" android:maxLength="10" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:hint="Concepto (opcional)">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etConcepto"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:inputType="textCapSentences" android:maxLength="120" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEntregar"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="12dp" android:paddingVertical="14dp"
+            android:text="Registrar entrega" app:cornerRadius="12dp" />
+
+        <!-- Fondos por ranchero -->
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Fondos por ranchero" android:textStyle="bold" android:textSize="16sp"
+            android:textColor="@color/verde_militar_oscuro" android:layout_marginTop="22dp" />
+        <LinearLayout
+            android:id="@+id/contenedorRancheros"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <!-- Entregas del mes -->
+        <TextView
+            android:id="@+id/tvTituloEntregas"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Entregas del mes" android:textStyle="bold" android:textSize="16sp"
+            android:textColor="@color/verde_militar_oscuro" android:layout_marginTop="22dp" />
+        <LinearLayout
+            android:id="@+id/contenedorEntregas"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnExcel"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="20dp" android:paddingVertical="14dp"
+            android:text="Descargar recargas (Excel)" />
+
+        <ProgressBar
+            android:id="@+id/progreso"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_gravity="center" android:layout_marginTop="12dp"
+            android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>

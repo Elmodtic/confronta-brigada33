@@ -37,6 +37,8 @@
         <activity android:name=".ui.RecargaActivity" android:exported="false" />
         <activity android:name=".ui.CanjeActivity" android:exported="false" />
         <activity android:name=".ui.KpisActivity" android:exported="false" />
+        <activity android:name=".ui.TesoreriaActivity" android:exported="false" />
+        <activity android:name=".ui.FondoRanchoActivity" android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

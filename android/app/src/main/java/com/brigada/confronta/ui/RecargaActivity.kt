@@ -44,6 +44,12 @@ class RecargaActivity : AppCompatActivity() {
     private fun buscar() {
         val cedula = b.etCedula.text?.toString()?.trim().orEmpty()
         if (cedula.isEmpty()) { toast("Escribe la cédula"); return }
+        // Cédula ecuatoriana: exactamente 10 dígitos
+        if (!cedula.matches(RE_CEDULA)) {
+            b.etCedula.error = "La cédula debe tener exactamente 10 dígitos"
+            b.etCedula.requestFocus()
+            toast("La cédula debe tener exactamente 10 dígitos"); return
+        }
         cargando(true)
         b.cardPersona.visibility = View.GONE
         lifecycleScope.launch {

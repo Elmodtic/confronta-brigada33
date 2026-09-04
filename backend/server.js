@@ -3,6 +3,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -10,9 +11,36 @@ const ExcelJS = require('exceljs');
 require('dotenv').config();
 
 const pool = require('./db');
-const { verificarToken, soloRol } = require('./auth');
+const { verificarToken, soloRol, revocarToken } = require('./auth');
+
+// ===============================================================
+// VALIDACIÓN DE ARRANQUE: el servidor NO inicia con un JWT_SECRET
+// inseguro (vacío, valor de plantilla o demasiado corto).
+// ===============================================================
+const JWT_SECRET = String(process.env.JWT_SECRET || '').trim();
+const SECRETOS_INSEGUROS = new Set([
+  '',
+  'secret',
+  'changeme',
+  'clave',
+  'default',
+  'jwt_secret',
+  'cambia_esto',
+  'cambia_esta_clave',
+  'cambia_esta_clave_por_una_muy_larga_y_secreta',
+]);
+if (SECRETOS_INSEGUROS.has(JWT_SECRET) || JWT_SECRET.length < 32) {
+  console.error(
+    '\n[FATAL] JWT_SECRET no configurado o inseguro.\n' +
+    '        Define en backend/.env un valor aleatorio de al menos 32 caracteres.\n' +
+    '        Genera uno con:\n' +
+    '        node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"\n');
+  process.exit(1);
+}
 
 const app = express();
+app.disable('x-powered-by');
+app.set('trust proxy', 1);      // detrás del proxy inverso (Nginx) local
 app.use(helmet());              // cabeceras de seguridad HTTP
 // CORS restringido: solo orígenes permitidos (configurable con CORS_ORIGINS).
 // Las apps móviles nativas no envían origin, así que se permiten (origin null).
@@ -24,18 +52,71 @@ app.use(cors({
     else cb(new Error('Origen no permitido por CORS'));
   },
 }));
-app.use(express.json());
+// Límite de tamaño del cuerpo JSON (evita payloads gigantes).
+app.use(express.json({ limit: '64kb' }));
 
-// Política de contraseñas: mín. 8, con minúscula, mayúscula, número y especial.
+// ===============================================================
+// RATE LIMITING
+// ===============================================================
+// Con un tunel (Cloudflare) delante, el backend ve TODAS las peticiones
+// llegando desde el mismo punto. Sin distinguir al cliente real, unos
+// pocos intentos fallidos de una persona bloquearian a todos los demas.
+// Cloudflare identifica al visitante en la cabecera CF-Connecting-IP.
+const clavePorIp = (req) => {
+  const cf = req.headers['cf-connecting-ip'];
+  if (cf) return String(cf).trim();
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) return String(xff).split(',')[0].trim();
+  return req.ip || 'desconocida';
+};
+// Límite global para toda la API.
+const limitadorGlobal = rateLimit({
+  windowMs: 15 * 60 * 1000,     // 15 minutos
+  max: 300,                     // 300 peticiones por IP en la ventana
+  keyGenerator: clavePorIp,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas peticiones. Espera unos minutos e inténtalo de nuevo.' },
+});
+app.use('/api/', limitadorGlobal);
+
+// Límite estricto para endpoints de autenticación / recuperación.
+const limitadorAuth = rateLimit({
+  windowMs: 15 * 60 * 1000,     // 15 minutos
+  max: 10,                      // 10 intentos por IP en la ventana
+  keyGenerator: clavePorIp,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // solo cuentan los intentos fallidos
+  message: { error: 'Demasiados intentos. Espera 15 minutos e inténtalo de nuevo.' },
+});
+
+// Política de contraseñas: 10–72 caracteres, sin espacios, con minúscula,
+// mayúscula, número y carácter especial.
+const RE_PASSWORD = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s])\S{10,72}$/;
 function validarPassword(pwd) {
   const p = String(pwd || '');
-  if (p.length < 8) return 'La contraseña debe tener al menos 8 caracteres';
-  if (!/[a-z]/.test(p)) return 'La contraseña debe incluir una letra minúscula';
-  if (!/[A-Z]/.test(p)) return 'La contraseña debe incluir una letra mayúscula';
-  if (!/[0-9]/.test(p)) return 'La contraseña debe incluir un número';
-  if (!/[^A-Za-z0-9]/.test(p)) return 'La contraseña debe incluir un carácter especial';
+  if (p.length < 10) return 'La contraseña debe tener al menos 10 caracteres';
+  if (p.length > 72) return 'La contraseña no puede superar los 72 caracteres';
+  if (/\s/.test(p)) return 'La contraseña no puede contener espacios';
+  if (!RE_PASSWORD.test(p))
+    return 'La contraseña debe incluir minúscula, mayúscula, número y carácter especial';
   return null;
 }
+
+// Cédula ecuatoriana: exactamente 10 dígitos.
+const RE_CEDULA = /^\d{10}$/;
+
+// Nombres y apellidos: solo letras (con tildes y ñ) y espacios simples.
+const RE_SOLO_LETRAS = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?: [A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*$/;
+
+// Normaliza a MAYÚSCULAS y colapsa espacios repetidos, para que todo el
+// personal quede escrito igual sin importar cómo lo escriba cada quien.
+const aMayusculas = (txt) => String(txt || "").trim().replace(/\s+/g, " ").toUpperCase();
+
+// Mensaje genérico del registro: no confirma si la cédula/usuario ya existe.
+const MSG_REGISTRO_GENERICO =
+  'No se pudo completar el registro. Verifica los datos e inténtalo nuevamente.';
 
 const INTENTOS_MAX = 3;
 const BLOQUEO_MINUTOS = 10;
@@ -130,7 +211,7 @@ function idPersonalObjetivo(req, idPersonalPedido) {
 // ===============================================================
 
 // --- Login (con bloqueo por intentos y saludo con grado/nombre) ---
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', limitadorAuth, async (req, res) => {
   const { username, password } = req.body;
   try {
     const [rows] = await pool.query(`
@@ -187,7 +268,7 @@ app.post('/api/login', async (req, res) => {
         id_personal: usuario.id_personal || null,
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES });
+      { expiresIn: '15m', jwtid: crypto.randomUUID() });
 
     await auditar(usuario.id_usuario, 'LOGIN', `Ingreso de ${username}`);
     res.json({
@@ -206,8 +287,15 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// --- Logout: agrega el token actual a la lista negra en memoria ---
+app.post('/api/logout', verificarToken, async (req, res) => {
+  revocarToken(req.usuario);
+  await auditar(req.usuario.id_usuario, 'LOGOUT', `Cierre de sesión de ${req.usuario.username}`);
+  res.json({ ok: true });
+});
+
 // --- Registro de un nuevo usuario (crea ficha de personal + cuenta) ---
-app.post('/api/registro', async (req, res) => {
+app.post('/api/registro', limitadorAuth, async (req, res) => {
   const {
     password, pregunta_seguridad, respuesta_seguridad,
     cedula, nombres, apellidos, id_grado, id_unidad,
@@ -219,6 +307,14 @@ app.post('/api/registro', async (req, res) => {
     return res.status(400).json({ error: 'Faltan datos obligatorios (incluida la cédula)' });
   if (!pregunta_seguridad || !respuesta_seguridad)
     return res.status(400).json({ error: 'Debe definir la pregunta y respuesta de seguridad' });
+  if (!RE_CEDULA.test(cedulaLimpia))
+    return res.status(400).json({ error: "La cédula debe tener exactamente 10 dígitos" });
+  const nombresMay = aMayusculas(nombres);
+  const apellidosMay = aMayusculas(apellidos);
+  if (!RE_SOLO_LETRAS.test(nombresMay))
+    return res.status(400).json({ error: "Los nombres solo pueden contener letras" });
+  if (!RE_SOLO_LETRAS.test(apellidosMay))
+    return res.status(400).json({ error: "Los apellidos solo pueden contener letras" });
   const errPwd = validarPassword(password);
   if (errPwd) return res.status(400).json({ error: errPwd });
 
@@ -226,11 +322,11 @@ app.post('/api/registro', async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    // ¿ya existe una cuenta con esa cédula?
+    // ¿ya existe una cuenta con esa cédula? Respuesta genérica (anti-enumeración).
     const [u] = await conn.query('SELECT id_usuario FROM usuario WHERE username = ?', [cedulaLimpia]);
     if (u.length > 0) {
       await conn.rollback();
-      return res.status(409).json({ error: 'Ya existe una cuenta con esa cédula' });
+      return res.status(400).json({ error: MSG_REGISTRO_GENERICO });
     }
 
     // Ficha de personal: reutiliza si la cédula ya existe, si no la crea
@@ -241,7 +337,7 @@ app.post('/api/registro', async (req, res) => {
       const [ins] = await conn.query(
         `INSERT INTO personal (cedula, nombres, apellidos, id_grado, id_unidad)
          VALUES (?,?,?,?,?)`,
-        [cedulaLimpia, nombres.trim(), apellidos.trim(), id_grado, id_unidad]);
+        [cedulaLimpia, nombresMay, apellidosMay, id_grado, id_unidad]);
       idPersonal = ins.insertId;
     }
 
@@ -261,7 +357,7 @@ app.post('/api/registro', async (req, res) => {
     await conn.rollback();
     console.error(e);
     if (e.code === 'ER_DUP_ENTRY')
-      return res.status(409).json({ error: 'Usuario o cédula ya registrados' });
+      return res.status(400).json({ error: MSG_REGISTRO_GENERICO });
     res.status(500).json({ error: 'Error al registrar' });
   } finally {
     conn.release();
@@ -269,7 +365,7 @@ app.post('/api/registro', async (req, res) => {
 });
 
 // --- Olvidé mi contraseña: paso 1, obtener la pregunta de seguridad ---
-app.get('/api/olvido/pregunta', async (req, res) => {
+app.get('/api/olvido/pregunta', limitadorAuth, async (req, res) => {
   const { username } = req.query;
   try {
     const [rows] = await pool.query(
@@ -284,7 +380,7 @@ app.get('/api/olvido/pregunta', async (req, res) => {
 });
 
 // --- Olvidé mi contraseña: paso 2, verificar respuesta y cambiar clave ---
-app.post('/api/olvido/reset', async (req, res) => {
+app.post('/api/olvido/reset', limitadorAuth, async (req, res) => {
   const { username, respuesta_seguridad, nueva_password } = req.body;
   if (!username || !respuesta_seguridad || !nueva_password)
     return res.status(400).json({ error: 'Faltan datos' });
@@ -604,11 +700,13 @@ app.get('/api/mi/estado', verificarToken, async (req, res) => {
 });
 
 // ===============================================================
-// TESORERÍA (TESORERO / ADMIN): recargar saldo buscando por cédula
+// TESORERÍA (solo TESORERO): recargar saldo buscando por cédula
 // ===============================================================
-app.get('/api/tesoreria/buscar', verificarToken, soloRol('TESORERO', 'ADMIN'), async (req, res) => {
+app.get('/api/tesoreria/buscar', verificarToken, soloRol('TESORERO'), async (req, res) => {
   const cedula = (req.query.cedula || '').trim();
   if (!cedula) return res.status(400).json({ error: 'Indica la cédula' });
+  if (!RE_CEDULA.test(cedula))
+    return res.status(400).json({ error: 'La cédula debe tener exactamente 10 dígitos' });
   const [rows] = await pool.query(`
     SELECT us.id_usuario, us.saldo, p.cedula, p.nombres, p.apellidos,
            g.abreviatura AS grado, u.siglas AS unidad
@@ -622,11 +720,13 @@ app.get('/api/tesoreria/buscar', verificarToken, soloRol('TESORERO', 'ADMIN'), a
   res.json({ ...rows[0], saldo: Number(rows[0].saldo) });
 });
 
-app.post('/api/recargas', verificarToken, soloRol('TESORERO', 'ADMIN'), async (req, res) => {
+app.post('/api/recargas', verificarToken, soloRol('TESORERO'), async (req, res) => {
   const cedula = (req.body.cedula || '').trim();
   const monto = Number(req.body.monto);
   if (!cedula || isNaN(monto) || monto <= 0)
     return res.status(400).json({ error: 'Cédula y monto válido son obligatorios' });
+  if (!RE_CEDULA.test(cedula))
+    return res.status(400).json({ error: 'La cédula debe tener exactamente 10 dígitos' });
 
   const conn = await pool.getConnection();
   try {
@@ -793,7 +893,7 @@ app.post('/api/qr', verificarToken, async (req, res) => {
   }
 });
 
-app.post('/api/canjear', verificarToken, soloRol('RANCHERO', 'ADMIN'), async (req, res) => {
+app.post('/api/canjear', verificarToken, soloRol('RANCHERO'), async (req, res) => {
   const token = (req.body.token || '').trim();
   if (!token) return res.status(400).json({ error: 'Falta el código del QR' });
 
@@ -850,16 +950,46 @@ app.post('/api/canjear', verificarToken, soloRol('RANCHERO', 'ADMIN'), async (re
 const ROLES_VALIDOS = ['ADMIN', 'OPERADOR', 'CONSULTA', 'RANCHERO', 'TESORERO'];
 
 // Listar todos los usuarios con su ficha
-app.get('/api/usuarios', verificarToken, soloRol('ADMIN'), async (_req, res) => {
+app.get('/api/usuarios', verificarToken, soloRol('ADMIN'), async (req, res) => {
+  // Búsqueda en el servidor: con miles de fichas no tiene sentido bajar
+  // la lista completa al teléfono. Se filtra por cédula, nombres o
+  // apellidos y se limita el número de resultados.
+  const buscar = String(req.query.buscar || '').trim();
+  const limite = Math.min(Math.max(Number(req.query.limite) || 50, 1), 200);
+
+  const vals = [];
+  let where = '';
+  if (buscar) {
+    const like = '%' + buscar + '%';
+    where = `WHERE us.username LIKE ? OR p.cedula LIKE ?
+              OR p.nombres LIKE ? OR p.apellidos LIKE ?
+              OR CONCAT(p.nombres, ' ', p.apellidos) LIKE ?`;
+    vals.push(like, like, like, like, like);
+  }
+  vals.push(limite);
+
   const [rows] = await pool.query(`
-    SELECT us.id_usuario, us.username, us.rol, us.activo,
-           p.nombres, p.apellidos, g.abreviatura AS grado, u.siglas AS unidad
+    SELECT us.id_usuario, us.username, us.rol, us.activo, us.saldo,
+           p.cedula, p.nombres, p.apellidos,
+           g.abreviatura AS grado, u.siglas AS unidad
     FROM usuario us
     LEFT JOIN personal p ON us.id_personal = p.id_personal
     LEFT JOIN grado g    ON p.id_grado     = g.id_grado
     LEFT JOIN unidad u   ON p.id_unidad    = u.id_unidad
-    ORDER BY us.username`);
-  res.json(rows.map((r) => ({ ...r, activo: !!r.activo })));
+    ${where}
+    ORDER BY p.apellidos, p.nombres, us.username
+    LIMIT ?`, vals);
+
+  const [[tot]] = await pool.query('SELECT COUNT(*) c FROM usuario');
+  res.json({
+    total_registrados: Number(tot.c),
+    mostrados: rows.length,
+    limite,
+    buscar,
+    usuarios: rows.map((r) => ({
+      ...r, activo: !!r.activo, saldo: Number(r.saldo || 0),
+    })),
+  });
 });
 
 // Cambiar rol y/o estado (activo) de un usuario
@@ -915,14 +1045,68 @@ app.post('/api/usuarios/:id/password', verificarToken, soloRol('ADMIN'), async (
 });
 
 // Registros / bitácora de auditoría (últimos 100)
-app.get('/api/auditoria', verificarToken, soloRol('ADMIN'), async (_req, res) => {
-  const [rows] = await pool.query(`
-    SELECT a.id_auditoria, a.accion, a.detalle, a.fecha_hora, us.username
-    FROM auditoria a
-    LEFT JOIN usuario us ON a.id_usuario = us.id_usuario
-    ORDER BY a.fecha_hora DESC
-    LIMIT 100`);
-  res.json(rows);
+app.get('/api/auditoria', verificarToken, soloRol('ADMIN'), async (req, res) => {
+  // Filtros:
+  //   ?fecha=YYYY-MM-DD   un día concreto
+  //   ?anio=&mes=         un mes completo
+  //   ?buscar=            cédula, usuario, nombres, apellidos, acción o detalle
+  //   (sin filtros)       los últimos movimientos
+  const f = String(req.query.fecha || '');
+  const hayFecha = f.length === 10 && f[4] === '-' && f[7] === '-' && !isNaN(Date.parse(f));
+  const anio = Number(req.query.anio) || null;
+  const mes = Number(req.query.mes) || null;
+  const buscar = String(req.query.buscar || '').trim();
+  const limite = Math.min(Math.max(Number(req.query.limite) || 200, 1), 500);
+
+  const cond = [];
+  const vals = [];
+  if (hayFecha) {
+    cond.push('DATE(a.fecha_hora) = ?');
+    vals.push(f);
+  } else if (anio && mes) {
+    cond.push('YEAR(a.fecha_hora) = ? AND MONTH(a.fecha_hora) = ?');
+    vals.push(anio, mes);
+  }
+  if (buscar) {
+    const like = '%' + buscar + '%';
+    cond.push(`(us.username LIKE ? OR p.cedula LIKE ? OR p.nombres LIKE ?
+                OR p.apellidos LIKE ? OR a.accion LIKE ? OR a.detalle LIKE ?)`);
+    vals.push(like, like, like, like, like, like);
+  }
+  const where = cond.length ? 'WHERE ' + cond.join(' AND ') : '';
+  vals.push(limite);
+
+  try {
+    const [rows] = await pool.query(`
+      SELECT a.id_auditoria, a.accion, a.detalle, a.fecha_hora,
+             us.username, p.cedula, p.nombres, p.apellidos
+      FROM auditoria a
+      LEFT JOIN usuario us ON a.id_usuario = us.id_usuario
+      LEFT JOIN personal p ON us.id_personal = p.id_personal
+      ${where}
+      ORDER BY a.fecha_hora DESC
+      LIMIT ?`, vals);
+
+    const [[tot]] = await pool.query('SELECT COUNT(*) c FROM auditoria');
+    res.json({
+      total_registros: Number(tot.c),
+      mostrados: rows.length,
+      limite,
+      filtro: { fecha: hayFecha ? f : null, anio, mes, buscar: buscar || null },
+      registros: rows.map((r) => ({
+        id_auditoria: r.id_auditoria,
+        accion: r.accion,
+        detalle: r.detalle,
+        fecha_hora: r.fecha_hora,
+        username: r.username,
+        cedula: r.cedula,
+        persona: [r.apellidos, r.nombres].filter(Boolean).join(' ') || null,
+      })),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al consultar la auditoría' });
+  }
 });
 
 // ===============================================================
@@ -996,41 +1180,425 @@ app.get('/api/reporte/:fecha', verificarToken, soloRol('ADMIN', 'OPERADOR'), asy
 // ===============================================================
 // KPIs — GOBIERNO DE TI (indicadores para el mando, solo ADMIN)
 // ===============================================================
-app.get('/api/kpis', verificarToken, soloRol('ADMIN'), async (_req, res) => {
-  const ahora = new Date();
-  const hoy = ahora.toISOString().slice(0, 10);
-  const anio = ahora.getFullYear();
-  const mes = ahora.getMonth() + 1;
+app.get('/api/kpis', verificarToken, soloRol('ADMIN'), async (req, res) => {
+  // Indicadores de un DÍA concreto y consolidado del MES.
+  //   ?fecha=YYYY-MM-DD     -> día a analizar (por defecto, hoy)
+  //   ?anio=YYYY&mes=M      -> mes a consolidar (por defecto, el de la fecha)
+  const hoy = new Date().toISOString().slice(0, 10);
+  const f = String(req.query.fecha || '');
+  const fecha = (f.length === 10 && f[4] === '-' && f[7] === '-' && !isNaN(Date.parse(f))) ? f : hoy;
+  const anio = Number(req.query.anio) || Number(fecha.slice(0, 4));
+  const mes = Number(req.query.mes) || Number(fecha.slice(5, 7));
 
-  const [[pers]] = await pool.query('SELECT COUNT(*) c FROM personal WHERE activo = 1');
-  const [roles] = await pool.query('SELECT rol, COUNT(*) c FROM usuario GROUP BY rol');
-  const [[rsv]] = await pool.query(
-    'SELECT COALESCE(SUM(desayuno+almuerzo+merienda),0) r FROM confronta WHERE fecha = ?', [hoy]);
-  const [[cons]] = await pool.query(
-    "SELECT COUNT(*) c, COALESCE(SUM(precio),0) m FROM ticket WHERE estado='CANJEADO' AND fecha = ?", [hoy]);
-  const [[saldo]] = await pool.query('SELECT COALESCE(SUM(saldo),0) s FROM usuario');
-  const [[recmes]] = await pool.query(
-    'SELECT COALESCE(SUM(monto),0) m FROM recarga WHERE YEAR(fecha_hora)=? AND MONTH(fecha_hora)=?', [anio, mes]);
-  const [[consmes]] = await pool.query(
-    "SELECT COALESCE(SUM(precio),0) m FROM ticket WHERE estado IN ('ACTIVO','CANJEADO') AND YEAR(creado_en)=? AND MONTH(creado_en)=?", [anio, mes]);
+  try {
+    const [[pers]] = await pool.query('SELECT COUNT(*) c FROM personal WHERE activo = 1');
+    const [roles] = await pool.query('SELECT rol, COUNT(*) c FROM usuario GROUP BY rol');
+    const [[saldo]] = await pool.query('SELECT COALESCE(SUM(saldo),0) s FROM usuario');
 
-  const reservadasHoy = Number(rsv.r);
-  const consumidasHoy = Number(cons.c);
-  const cumplimiento = reservadasHoy > 0 ? Math.round((consumidasHoy / reservadasHoy) * 100) : 0;
+    // --- Día ---
+    const [[rsvD]] = await pool.query(
+      'SELECT COALESCE(SUM(desayuno+almuerzo+merienda),0) r FROM confronta WHERE fecha = ?', [fecha]);
+    const [[conD]] = await pool.query(
+      "SELECT COUNT(*) c, COALESCE(SUM(precio),0) m FROM ticket WHERE estado='CANJEADO' AND fecha = ?", [fecha]);
+    const [[recD]] = await pool.query(
+      'SELECT COALESCE(SUM(monto),0) m FROM recarga WHERE DATE(fecha_hora) = ?', [fecha]);
+    const [[trfD]] = await pool.query(
+      'SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE DATE(fecha_hora) = ?', [fecha]);
 
-  res.json({
-    fecha: hoy,
-    personal_activo: Number(pers.c),
-    usuarios_por_rol: roles.map((r) => ({ rol: r.rol, total: Number(r.c) })),
-    reservas_hoy: reservadasHoy,
-    consumos_hoy: consumidasHoy,
-    cumplimiento_hoy_pct: cumplimiento,
-    desperdicio_hoy: Math.max(0, reservadasHoy - consumidasHoy),
-    costo_consumido_hoy: redondear(Number(cons.m)),
-    saldo_en_circulacion: redondear(Number(saldo.s)),
-    recaudo_mes: redondear(Number(recmes.m)),
-    consumo_mes: redondear(Number(consmes.m)),
-  });
+    // --- Mes ---
+    const [[rsvM]] = await pool.query(
+      'SELECT COALESCE(SUM(desayuno+almuerzo+merienda),0) r FROM confronta WHERE YEAR(fecha)=? AND MONTH(fecha)=?', [anio, mes]);
+    const [[conM]] = await pool.query(
+      "SELECT COUNT(*) c, COALESCE(SUM(precio),0) m FROM ticket WHERE estado='CANJEADO' AND YEAR(fecha)=? AND MONTH(fecha)=?", [anio, mes]);
+    const [[recM]] = await pool.query(
+      'SELECT COALESCE(SUM(monto),0) m FROM recarga WHERE YEAR(fecha_hora)=? AND MONTH(fecha_hora)=?', [anio, mes]);
+    const [[trfM]] = await pool.query(
+      'SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE YEAR(fecha_hora)=? AND MONTH(fecha_hora)=?', [anio, mes]);
+
+    const bloque = (reservas, consumos, costo, recaudado, transferido) => {
+      const r = Number(reservas), c = Number(consumos);
+      return {
+        reservas: r,
+        consumos: c,
+        cumplimiento_pct: r > 0 ? Math.round((c / r) * 100) : 0,
+        desperdicio: Math.max(0, r - c),
+        costo_consumido: redondear(Number(costo)),
+        recaudado: redondear(Number(recaudado)),
+        transferido: redondear(Number(transferido)),
+      };
+    };
+
+    const dia = bloque(rsvD.r, conD.c, conD.m, recD.m, trfD.m);
+    const mesR = bloque(rsvM.r, conM.c, conM.m, recM.m, trfM.m);
+
+    res.json({
+      fecha, anio, mes, mes_nombre: MESES[mes - 1],
+      personal_activo: Number(pers.c),
+      usuarios_por_rol: roles.map((r) => ({ rol: r.rol, total: Number(r.c) })),
+      saldo_en_circulacion: redondear(Number(saldo.s)),
+      dia,
+      mes_resumen: mesR,
+      // Campos antiguos: se conservan para no romper versiones previas de la app
+      reservas_hoy: dia.reservas,
+      consumos_hoy: dia.consumos,
+      cumplimiento_hoy_pct: dia.cumplimiento_pct,
+      desperdicio_hoy: dia.desperdicio,
+      costo_consumido_hoy: dia.costo_consumido,
+      recaudo_mes: mesR.recaudado,
+      consumo_mes: mesR.costo_consumido,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al calcular los indicadores' });
+  }
+});
+
+// ===============================================================
+// TESORERÍA — CONTABILIDAD Y FONDO ROTATIVO DEL RANCHO
+//
+//   Recaudación   = dinero que el TESORERO recibe de los comensales
+//                   (tabla recarga).
+//   Transferencia = entrega de dinero del TESORERO al RANCHERO para la
+//                   compra de víveres (tabla transferencia).
+//
+// La entrega NO se da por buena sola: el tesorero la registra y genera
+// un QR; el ranchero lo escanea y recién ahí se acredita el fondo. Así
+// el ranchero verifica lo que recibe y queda constancia con fecha y hora
+// de ambos momentos.
+//
+//   PENDIENTE  registrada, con QR sin escanear. El dinero sale de la
+//              caja disponible (queda EN TRÁNSITO) pero no acredita.
+//   CONFIRMADA el ranchero escaneó el QR. Acredita el fondo del rancho.
+//   ANULADA    el tesorero la canceló antes de que la confirmaran; el
+//              dinero regresa a la caja.
+//
+//   Caja disponible  = recaudado − (confirmadas + pendientes)
+//   Fondo del rancho = solo confirmadas
+//
+// El RANCHERO maneja dos saldos independientes:
+//   - Saldo de comensal (usuario.saldo): su crédito personal para comer.
+//   - Fondo de rancho: recursos operativos recibidos del tesorero.
+// ===============================================================
+
+// Valida 'YYYY-MM-DD' sin usar expresiones regulares.
+function esFechaValida(s) {
+  const t = String(s || '');
+  return t.length === 10 && t[4] === '-' && t[7] === '-' && !isNaN(Date.parse(t));
+}
+
+// Devuelve {fecha, anio, mes} a partir de los parámetros de consulta.
+function periodoDe(query) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const fecha = esFechaValida(query.fecha) ? String(query.fecha) : hoy;
+  const anio = Number(query.anio) || Number(fecha.slice(0, 4));
+  const mes = Number(query.mes) || Number(fecha.slice(5, 7));
+  return { fecha, anio, mes };
+}
+
+// --- Resumen contable del tesorero (por día y consolidado del mes) ---
+app.get('/api/tesoreria/resumen', verificarToken, soloRol('TESORERO'), async (req, res) => {
+  try {
+    const { fecha, anio, mes } = periodoDe(req.query);
+
+    const [[recDia]] = await pool.query(
+      'SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM recarga WHERE DATE(fecha_hora) = ?', [fecha]);
+    const [[recMes]] = await pool.query(
+      'SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM recarga WHERE YEAR(fecha_hora)=? AND MONTH(fecha_hora)=?', [anio, mes]);
+    const [[trfDia]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM transferencia WHERE estado <> 'ANULADA' AND DATE(fecha_hora) = ?", [fecha]);
+    const [[trfMes]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM transferencia WHERE estado <> 'ANULADA' AND YEAR(fecha_hora)=? AND MONTH(fecha_hora)=?", [anio, mes]);
+
+    const [[recTot]] = await pool.query('SELECT COALESCE(SUM(monto),0) m FROM recarga');
+    const [[confTot]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE estado = 'CONFIRMADA'");
+    const [[pendTot]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM transferencia WHERE estado = 'PENDIENTE'");
+
+    const caja = Number(recTot.m) - Number(confTot.m) - Number(pendTot.m);
+
+    const [[yo]] = await pool.query('SELECT saldo FROM usuario WHERE id_usuario = ?', [req.usuario.id_usuario]);
+
+    // Fondo acreditado (solo confirmadas) y monto en tránsito por ranchero
+    const [fondos] = await pool.query(`
+      SELECT us.id_usuario, p.cedula, p.nombres, p.apellidos, g.abreviatura AS grado,
+             us.saldo AS saldo_comensal,
+             COALESCE((SELECT SUM(t.monto) FROM transferencia t
+                       WHERE t.id_ranchero = us.id_usuario AND t.estado='CONFIRMADA'),0) AS fondo_rancho,
+             COALESCE((SELECT SUM(t.monto) FROM transferencia t
+                       WHERE t.id_ranchero = us.id_usuario AND t.estado='PENDIENTE'),0) AS en_transito
+      FROM usuario us
+      LEFT JOIN personal p ON us.id_personal = p.id_personal
+      LEFT JOIN grado g    ON p.id_grado     = g.id_grado
+      WHERE us.rol = 'RANCHERO' AND us.activo = 1
+      ORDER BY p.apellidos, p.nombres`);
+
+    res.json({
+      fecha, anio, mes, mes_nombre: MESES[mes - 1],
+      dia: {
+        recaudado: redondear(Number(recDia.m)), recargas: Number(recDia.n),
+        transferido: redondear(Number(trfDia.m)), entregas: Number(trfDia.n),
+        neto: redondear(Number(recDia.m) - Number(trfDia.m)),
+      },
+      mes_resumen: {
+        recaudado: redondear(Number(recMes.m)), recargas: Number(recMes.n),
+        transferido: redondear(Number(trfMes.m)), entregas: Number(trfMes.n),
+        neto: redondear(Number(recMes.m) - Number(trfMes.m)),
+      },
+      acumulado: {
+        recaudado: redondear(Number(recTot.m)),
+        transferido: redondear(Number(confTot.m)),
+        en_transito: redondear(Number(pendTot.m)),
+        pendientes: Number(pendTot.n),
+        caja: redondear(caja),
+      },
+      mi_saldo_comensal: Number(yo ? yo.saldo : 0),
+      rancheros: fondos.map((r) => ({
+        id_usuario: r.id_usuario,
+        cedula: r.cedula,
+        persona: `${r.grado || ''} ${r.apellidos || ''} ${r.nombres || ''}`.trim(),
+        saldo_comensal: Number(r.saldo_comensal),
+        fondo_rancho: redondear(Number(r.fondo_rancho)),
+        en_transito: redondear(Number(r.en_transito)),
+      })),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al calcular el resumen de tesorería' });
+  }
+});
+
+// --- Registrar entrega: queda PENDIENTE y devuelve el token del QR ---
+app.post('/api/tesoreria/transferencias', verificarToken, soloRol('TESORERO'), async (req, res) => {
+  const idRanchero = Number(req.body.id_ranchero);
+  const monto = Number(req.body.monto);
+  const concepto = String(req.body.concepto || '').trim().slice(0, 255) || null;
+
+  if (!idRanchero || isNaN(monto) || monto <= 0)
+    return res.status(400).json({ error: 'Indica el ranchero y un monto válido' });
+
+  try {
+    const [r] = await pool.query(
+      "SELECT id_usuario FROM usuario WHERE id_usuario = ? AND rol = 'RANCHERO' AND activo = 1", [idRanchero]);
+    if (r.length === 0)
+      return res.status(404).json({ error: 'El destinatario no es un ranchero activo' });
+
+    // La caja descuenta lo ya confirmado y lo que está en tránsito, para no
+    // comprometer dos veces el mismo dinero.
+    const [[recTot]] = await pool.query('SELECT COALESCE(SUM(monto),0) m FROM recarga');
+    const [[compr]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE estado <> 'ANULADA'");
+    const caja = Number(recTot.m) - Number(compr.m);
+    if (monto > caja + 0.001)
+      return res.status(400).json({
+        error: `La entrega de $${redondear(monto)} supera la caja disponible de $${redondear(caja)}`,
+      });
+
+    const token = crypto.randomBytes(16).toString('hex');
+    const [ins] = await pool.query(
+      `INSERT INTO transferencia (id_tesorero, id_ranchero, monto, concepto, token, estado)
+       VALUES (?,?,?,?,?,'PENDIENTE')`,
+      [req.usuario.id_usuario, idRanchero, monto, concepto, token]);
+
+    const [[fila]] = await pool.query(
+      'SELECT fecha_hora FROM transferencia WHERE id_transferencia = ?', [ins.insertId]);
+
+    await auditar(req.usuario.id_usuario, 'TRANSFERENCIA',
+      `Entrega PENDIENTE de $${redondear(monto)} al ranchero ${idRanchero}${concepto ? ' - ' + concepto : ''}`);
+
+    res.status(201).json({
+      ok: true,
+      id_transferencia: ins.insertId,
+      token,
+      estado: 'PENDIENTE',
+      monto: redondear(monto),
+      fecha_hora: fila ? fila.fecha_hora : null,
+      caja_restante: redondear(caja - monto),
+      mensaje: 'Muestra el QR al ranchero para que lo escanee y confirme la recepción.',
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al registrar la entrega' });
+  }
+});
+
+// --- Anular una entrega que nadie confirmó (el dinero vuelve a caja) ---
+app.post('/api/tesoreria/transferencias/:id/anular', verificarToken, soloRol('TESORERO'), async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const [t] = await pool.query('SELECT estado, monto FROM transferencia WHERE id_transferencia = ?', [id]);
+    if (t.length === 0) return res.status(404).json({ error: 'Entrega no encontrada' });
+    if (t[0].estado === 'CONFIRMADA')
+      return res.status(409).json({ error: 'No se puede anular: el ranchero ya la confirmó' });
+    if (t[0].estado === 'ANULADA')
+      return res.status(409).json({ error: 'Esa entrega ya estaba anulada' });
+
+    await pool.query(
+      "UPDATE transferencia SET estado='ANULADA', anulado_en=NOW(), token=NULL WHERE id_transferencia = ?", [id]);
+    await auditar(req.usuario.id_usuario, 'TRANSFERENCIA_ANULADA',
+      `Anuló la entrega ${id} por $${redondear(Number(t[0].monto))}`);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al anular la entrega' });
+  }
+});
+
+// --- Historial de entregas del mes (tesorero) ---
+app.get('/api/tesoreria/transferencias', verificarToken, soloRol('TESORERO'), async (req, res) => {
+  const { anio, mes } = periodoDe(req.query);
+  try {
+    const [rows] = await pool.query(`
+      SELECT t.id_transferencia, t.monto, t.concepto, t.fecha_hora, t.estado,
+             t.confirmado_en, t.anulado_en, t.token,
+             p.nombres, p.apellidos, g.abreviatura AS grado
+      FROM transferencia t
+      JOIN usuario us      ON t.id_ranchero = us.id_usuario
+      LEFT JOIN personal p ON us.id_personal = p.id_personal
+      LEFT JOIN grado g    ON p.id_grado     = g.id_grado
+      WHERE YEAR(t.fecha_hora)=? AND MONTH(t.fecha_hora)=?
+      ORDER BY t.fecha_hora DESC
+      LIMIT 200`, [anio, mes]);
+    const vivas = rows.filter((r) => r.estado !== 'ANULADA');
+    res.json({
+      anio, mes, mes_nombre: MESES[mes - 1],
+      total: redondear(vivas.reduce((a, r) => a + Number(r.monto), 0)),
+      confirmado: redondear(rows.filter((r) => r.estado === 'CONFIRMADA')
+        .reduce((a, r) => a + Number(r.monto), 0)),
+      pendiente: redondear(rows.filter((r) => r.estado === 'PENDIENTE')
+        .reduce((a, r) => a + Number(r.monto), 0)),
+      entregas: rows.map((r) => ({
+        id_transferencia: r.id_transferencia,
+        monto: Number(r.monto),
+        concepto: r.concepto,
+        fecha_hora: r.fecha_hora,
+        estado: r.estado,
+        confirmado_en: r.confirmado_en,
+        anulado_en: r.anulado_en,
+        token: r.estado === 'PENDIENTE' ? r.token : null,
+        ranchero: `${r.grado || ''} ${r.apellidos || ''} ${r.nombres || ''}`.trim(),
+      })),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al listar las entregas' });
+  }
+});
+
+// --- El ranchero escanea el QR y confirma la recepción ---
+app.post('/api/rancho/confirmar', verificarToken, soloRol('RANCHERO'), async (req, res) => {
+  const token = String(req.body.token || '').trim();
+  if (!token) return res.status(400).json({ error: 'Falta el código del QR' });
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query(`
+      SELECT t.*, p.nombres, p.apellidos, g.abreviatura AS grado
+      FROM transferencia t
+      JOIN usuario us      ON t.id_tesorero = us.id_usuario
+      LEFT JOIN personal p ON us.id_personal = p.id_personal
+      LEFT JOIN grado g    ON p.id_grado     = g.id_grado
+      WHERE t.token = ? FOR UPDATE`, [token]);
+
+    if (rows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: 'QR no válido' });
+    }
+    const t = rows[0];
+    if (t.estado === 'CONFIRMADA') {
+      await conn.rollback();
+      return res.status(409).json({ error: 'Esa entrega ya fue confirmada' });
+    }
+    if (t.estado === 'ANULADA') {
+      await conn.rollback();
+      return res.status(409).json({ error: 'Esa entrega fue anulada por el tesorero' });
+    }
+    // El QR solo lo puede confirmar el ranchero al que va dirigido.
+    if (t.id_ranchero !== req.usuario.id_usuario) {
+      await conn.rollback();
+      return res.status(403).json({ error: 'Esta entrega está dirigida a otro ranchero' });
+    }
+
+    await conn.query(
+      "UPDATE transferencia SET estado='CONFIRMADA', confirmado_en=NOW(), token=NULL WHERE id_transferencia = ?",
+      [t.id_transferencia]);
+    await conn.commit();
+
+    await auditar(req.usuario.id_usuario, 'FONDO_CONFIRMADO',
+      `Confirmó la recepción de $${redondear(Number(t.monto))} de la entrega ${t.id_transferencia}`);
+
+    const [[tot]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE id_ranchero=? AND estado='CONFIRMADA'",
+      [req.usuario.id_usuario]);
+
+    res.json({
+      ok: true,
+      id_transferencia: t.id_transferencia,
+      monto: Number(t.monto),
+      concepto: t.concepto,
+      entregado_en: t.fecha_hora,
+      tesorero: `${t.grado || ''} ${t.apellidos || ''} ${t.nombres || ''}`.trim(),
+      fondo_rancho: redondear(Number(tot.m)),
+    });
+  } catch (e) {
+    await conn.rollback();
+    console.error(e);
+    res.status(500).json({ error: 'Error al confirmar la entrega' });
+  } finally {
+    conn.release();
+  }
+});
+
+// --- Fondo del rancho (vista del RANCHERO) ---
+app.get('/api/rancho/fondo', verificarToken, soloRol('RANCHERO'), async (req, res) => {
+  const { fecha, anio, mes } = periodoDe(req.query);
+  const id = req.usuario.id_usuario;
+  try {
+    const [[yo]] = await pool.query('SELECT saldo FROM usuario WHERE id_usuario = ?', [id]);
+    // Solo lo confirmado acredita el fondo; se usa la fecha de confirmación.
+    const [[dia]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM transferencia WHERE id_ranchero=? AND estado='CONFIRMADA' AND DATE(confirmado_en)=?", [id, fecha]);
+    const [[mesR]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM transferencia WHERE id_ranchero=? AND estado='CONFIRMADA' AND YEAR(confirmado_en)=? AND MONTH(confirmado_en)=?", [id, anio, mes]);
+    const [[tot]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE id_ranchero=? AND estado='CONFIRMADA'", [id]);
+    const [[pend]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM transferencia WHERE id_ranchero=? AND estado='PENDIENTE'", [id]);
+
+    const [movs] = await pool.query(`
+      SELECT t.monto, t.concepto, t.fecha_hora, t.confirmado_en, t.estado,
+             p.nombres, p.apellidos, g.abreviatura AS grado
+      FROM transferencia t
+      JOIN usuario us      ON t.id_tesorero = us.id_usuario
+      LEFT JOIN personal p ON us.id_personal = p.id_personal
+      LEFT JOIN grado g    ON p.id_grado     = g.id_grado
+      WHERE t.id_ranchero = ? AND t.estado <> 'ANULADA'
+      ORDER BY t.fecha_hora DESC LIMIT 100`, [id]);
+
+    res.json({
+      fecha, anio, mes, mes_nombre: MESES[mes - 1],
+      saldo_comensal: Number(yo ? yo.saldo : 0),
+      fondo_rancho: redondear(Number(tot.m)),
+      por_confirmar: redondear(Number(pend.m)),
+      entregas_por_confirmar: Number(pend.n),
+      recibido_dia: redondear(Number(dia.m)),
+      entregas_dia: Number(dia.n),
+      recibido_mes: redondear(Number(mesR.m)),
+      entregas_mes: Number(mesR.n),
+      movimientos: movs.map((m) => ({
+        monto: Number(m.monto),
+        concepto: m.concepto,
+        fecha_hora: m.fecha_hora,
+        confirmado_en: m.confirmado_en,
+        estado: m.estado,
+        tesorero: `${m.grado || ''} ${m.apellidos || ''} ${m.nombres || ''}`.trim(),
+      })),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al consultar el fondo del rancho' });
+  }
 });
 
 // ===============================================================
@@ -1101,7 +1669,7 @@ app.get('/api/reportes/produccion.xlsx', verificarToken, soloRol('RANCHERO', 'AD
 });
 
 // Tesorero/Admin: recargas realizadas
-app.get('/api/reportes/recargas.xlsx', verificarToken, soloRol('TESORERO', 'ADMIN'), async (_req, res) => {
+app.get('/api/reportes/recargas.xlsx', verificarToken, soloRol('TESORERO'), async (_req, res) => {
   const [rows] = await pool.query(`
     SELECT r.fecha_hora, p.cedula, p.nombres, p.apellidos, r.monto, pt.nombres t_nom, pt.apellidos t_ape
     FROM recarga r

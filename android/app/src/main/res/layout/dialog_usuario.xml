@@ -26,7 +26,10 @@
         android:textColor="@color/gris_texto" android:layout_marginTop="16dp" />
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:hint="Nueva contraseña (dejar vacío para no cambiar)">
+        xmlns:app="http://schemas.android.com/apk/res-auto"
+        android:hint="Nueva contraseña (dejar vacío para no cambiar)"
+        app:endIconMode="password_toggle"
+        app:endIconTint="@color/texto_secundario">
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etNuevaClave"
             android:layout_width="match_parent" android:layout_height="wrap_content"

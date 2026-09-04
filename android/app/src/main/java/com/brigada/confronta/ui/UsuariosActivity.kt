@@ -3,6 +3,7 @@ package com.brigada.confronta.ui
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -16,26 +17,57 @@ import com.brigada.confronta.databinding.ActivityUsuariosBinding
 import com.brigada.confronta.databinding.DialogUsuarioBinding
 import kotlinx.coroutines.launch
 
+/**
+ * Gestión de usuarios y roles.
+ *
+ * La búsqueda se resuelve en el servidor (`GET /api/usuarios?buscar=`) y se
+ * limita el número de resultados: con miles de fichas no tiene sentido bajar
+ * la nómina completa al teléfono ni obligar al administrador a desplazarse.
+ */
 class UsuariosActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityUsuariosBinding
-    private val ROLES = listOf("ADMIN", "OPERADOR", "CONSULTA", "RANCHERO")
+
+    // El orden DEBE coincidir con el array @array/roles del diálogo, porque
+    // el rol se resuelve por posición del spinner.
+    private val ROLES = listOf("ADMIN", "OPERADOR", "CONSULTA", "RANCHERO", "TESORERO")
+
+    private val LIMITE = 50
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityUsuariosBinding.inflate(layoutInflater)
         setContentView(b.root)
         supportActionBar?.title = "Gestión de usuarios"
-        cargar()
+
+        b.btnBuscar.setOnClickListener { buscar() }
+        b.etBuscar.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) { buscar(); true } else false
+        }
+
+        // Primera carga: los más recientes, sin filtro.
+        buscar()
     }
 
-    private fun cargar() {
+    private fun buscar() {
+        val texto = b.etBuscar.text?.toString()?.trim().orEmpty()
         b.progreso.visibility = View.VISIBLE
+        b.contenedorUsuarios.removeAllViews()
         lifecycleScope.launch {
             try {
-                val resp = ApiClient.api.usuarios()
-                if (resp.isSuccessful && resp.body() != null) pintar(resp.body()!!)
-                else toast(errorDeApi(resp))
+                val resp = ApiClient.api.usuarios(
+                    buscar = texto.ifBlank { null },
+                    limite = LIMITE)
+                if (resp.isSuccessful && resp.body() != null) {
+                    val r = resp.body()!!
+                    b.tvResumen.text = if (texto.isBlank())
+                        "Mostrando ${r.mostrados} de ${r.total_registrados} usuarios registrados"
+                    else
+                        "${r.mostrados} coincidencia(s) para \"$texto\" · ${r.total_registrados} usuarios en total"
+                    if (r.usuarios.isEmpty()) sinResultados(texto) else pintar(r.usuarios)
+                    if (r.mostrados >= r.limite)
+                        toast("Se muestran los primeros ${r.limite}. Afina la búsqueda.")
+                } else toast(errorDeApi(resp))
             } catch (e: Exception) {
                 toast("No se pudo conectar con el servidor.\n${e.message}")
             } finally {
@@ -44,8 +76,17 @@ class UsuariosActivity : AppCompatActivity() {
         }
     }
 
+    private fun sinResultados(texto: String) {
+        b.contenedorUsuarios.addView(TextView(this).apply {
+            text = "Sin resultados para \"$texto\"."
+            textSize = 15f
+            setPadding(20, 40, 20, 40)
+            gravity = Gravity.CENTER
+            setTextColor(getColor(com.brigada.confronta.R.color.texto_secundario))
+        })
+    }
+
     private fun pintar(usuarios: List<UsuarioAdmin>) {
-        b.contenedorUsuarios.removeAllViews()
         for (u in usuarios) {
             val fila = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -55,7 +96,8 @@ class UsuariosActivity : AppCompatActivity() {
                 setBackgroundResource(android.R.drawable.list_selector_background)
                 setOnClickListener { editarUsuario(u) }
             }
-            val nombre = listOfNotNull(u.nombres, u.apellidos).joinToString(" ").ifBlank { "(sin ficha)" }
+            val nombre = listOfNotNull(u.nombres, u.apellidos)
+                .joinToString(" ").ifBlank { "(sin ficha)" }
             val izq = TextView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 text = "${u.username}\n$nombre"
@@ -86,8 +128,10 @@ class UsuariosActivity : AppCompatActivity() {
         db.spRol.setSelection(ROLES.indexOf(u.rol).coerceAtLeast(0))
         db.swActivo.isChecked = u.activo
 
+        val nombre = listOfNotNull(u.nombres, u.apellidos).joinToString(" ")
         AlertDialog.Builder(this)
             .setTitle(u.username)
+            .setMessage(if (nombre.isBlank()) null else nombre)
             .setView(db.root)
             .setPositiveButton("Guardar") { _, _ ->
                 val nuevoRol = ROLES[db.spRol.selectedItemPosition]
@@ -100,9 +144,13 @@ class UsuariosActivity : AppCompatActivity() {
     }
 
     private fun guardar(u: UsuarioAdmin, rol: String, activo: Boolean, nuevaClave: String) {
+        // La clave nueva se valida contra la misma política del servidor.
+        if (nuevaClave.isNotEmpty()) {
+            val err = validarPassword(nuevaClave)
+            if (err != null) { toast(err); return }
+        }
         lifecycleScope.launch {
             try {
-                // Actualiza rol/activo si cambiaron
                 if (rol != u.rol || activo != u.activo) {
                     val r = ApiClient.api.actualizarUsuario(
                         u.id_usuario,
@@ -111,13 +159,12 @@ class UsuariosActivity : AppCompatActivity() {
                             activo = if (activo != u.activo) activo else null))
                     if (!r.isSuccessful) { toast(errorDeApi(r)); return@launch }
                 }
-                // Restablece contraseña si se escribió una
                 if (nuevaClave.isNotEmpty()) {
                     val r = ApiClient.api.resetPasswordUsuario(u.id_usuario, AdminPassReq(nuevaClave))
                     if (!r.isSuccessful) { toast(errorDeApi(r)); return@launch }
                 }
                 toast("Usuario ${u.username} actualizado")
-                cargar()
+                buscar()
             } catch (e: Exception) {
                 toast("No se pudo conectar con el servidor.\n${e.message}")
             }

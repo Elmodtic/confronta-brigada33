@@ -1,12 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.Confronta" parent="Theme.Material3.DayNight">
+
+    <!--
+      IMPORTANTE: el tema base es .Light y NO .DayNight.
+      Con DayNight, un celular en modo oscuro cambiaba los colores de texto a
+      claros, pero todos los layouts tienen el fondo fijo en @color/gris_fondo
+      (claro). Resultado: letras casi blancas sobre fondo blanco, ilegibles en
+      TODA la app. Fijando el tema claro los colores son deterministas.
+    -->
+    <style name="Theme.Confronta" parent="Theme.Material3.Light">
         <item name="colorPrimary">@color/verde_militar</item>
         <item name="colorPrimaryDark">@color/verde_militar_oscuro</item>
         <item name="colorOnPrimary">@color/blanco</item>
         <item name="colorSecondary">@color/dorado</item>
         <item name="colorOnSecondary">@color/blanco</item>
+
+        <!-- Superficies y textos explicitos: garantizan contraste -->
+        <item name="colorSurface">@color/superficie</item>
+        <item name="colorOnSurface">@color/texto_principal</item>
+        <item name="colorOnSurfaceVariant">@color/texto_secundario</item>
+        <item name="android:colorBackground">@color/gris_fondo</item>
+        <item name="colorOnBackground">@color/texto_principal</item>
+        <item name="android:textColorPrimary">@color/texto_principal</item>
+        <item name="android:textColorSecondary">@color/texto_secundario</item>
+        <item name="android:textColorHint">@color/texto_hint</item>
+
+        <!-- Todos los MaterialButton usan el estilo legible por defecto -->
+        <item name="materialButtonStyle">@style/Widget.Confronta.Button</item>
+
         <!-- Barra de estado negra: aspecto moderno -->
         <item name="android:statusBarColor">@color/negro</item>
     </style>
+
+    <!--
+      Boton con estados VISIBLES. Material3 pinta los botones deshabilitados
+      con muy poca opacidad y sobre el fondo claro de la app desaparecian
+      (caso del menu cuando la cuenta no tiene ficha de personal).
+    -->
+    <style name="Widget.Confronta.Button" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/boton_fondo</item>
+        <item name="android:textColor">@color/boton_texto</item>
+        <item name="iconTint">@color/boton_texto</item>
+        <item name="rippleColor">@color/blanco</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
 </resources>

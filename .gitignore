@@ -41,3 +41,32 @@ CLAUDE.md
 
 # Notas locales con datos sensibles (nunca se sube)
 Credenciales.txt
+
+# --- Claves privadas TLS (nunca se suben) ---
+certs/*.key
+*.key
+*.pem
+*.pfx
+
+# --- Firma del APK de release (NUNCA se sube: si se filtra, cualquiera
+#     puede publicar actualizaciones falsas de la app) ---
+android/keystore/
+android/keystore.properties
+*.jks
+*.keystore
+
+# Direccion temporal del tunel (cambia en cada arranque)
+url_tunel.txt
+tunel.log
+
+arranque.log
+
+# --- Respaldos de la base: llevan cedulas y hashes de contrasenas ---
+db/respaldos/
+*.sql.bak
+
+# --- Copias de trabajo (no aportan nada al repo) ---
+*.bak
+*.bak-*
+*.bak[0-9]
+android/.backup-ui/
