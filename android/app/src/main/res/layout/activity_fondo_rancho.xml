@@ -102,6 +102,59 @@
             android:layout_marginTop="8dp" android:paddingVertical="14dp"
             android:text="Confirmar recepción" app:cornerRadius="12dp" />
 
+        <!-- Registro de compras: es lo que hace bajar el fondo -->
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Registrar compra" android:textStyle="bold" android:textSize="16sp"
+            android:textColor="@color/verde_militar_oscuro" android:layout_marginTop="22dp" />
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Anota aqui lo que compras con el fondo. Cada compra descuenta del saldo para cocinar."
+            android:textColor="@color/texto_secundario" android:textSize="13sp"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Categoria" android:textColor="@color/texto_secundario" />
+        <Spinner
+            android:id="@+id/spCategoria"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:entries="@array/categorias_gasto" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:hint="Monto gastado ($)">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etMontoGasto"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:inputType="numberDecimal" android:maxLength="10" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:hint="Detalle (opcional)">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etDetalleGasto"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:inputType="textCapSentences" android:maxLength="120" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRegistrarGasto"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:paddingVertical="14dp"
+            android:text="Registrar compra" app:cornerRadius="12dp" />
+
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Compras registradas" android:textStyle="bold" android:textSize="16sp"
+            android:textColor="@color/verde_militar_oscuro" android:layout_marginTop="22dp" />
+        <LinearLayout
+            android:id="@+id/contenedorGastos"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnFecha"
             style="@style/Widget.Material3.Button.TonalButton"

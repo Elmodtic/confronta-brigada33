@@ -316,7 +316,10 @@ data class Acumulado(
     val transferido: Double,
     val en_transito: Double,
     val pendientes: Int,
-    val caja: Double
+    /** Dinero que realmente salio: solo lo confirmado por el ranchero. */
+    val caja: Double,
+    /** Caja menos lo que ya esta en transito; es lo que aun puede entregar. */
+    val disponible: Double
 )
 
 data class RancheroFondo(
@@ -324,6 +327,8 @@ data class RancheroFondo(
     val cedula: String?,
     val persona: String,
     val saldo_comensal: Double,
+    val recibido: Double,
+    val gastado: Double,
     val fondo_rancho: Double,
     val en_transito: Double
 )
@@ -353,7 +358,8 @@ data class TransferenciaResp(
     val estado: String?,
     val monto: Double,
     val fecha_hora: String?,
-    val caja_restante: Double,
+    val caja: Double,
+    val disponible_restante: Double,
     val mensaje: String?
 )
 
@@ -397,14 +403,23 @@ data class FondoRancho(
     val mes: Int,
     val mes_nombre: String,
     val saldo_comensal: Double,
+    /** Lo que queda para cocinar: confirmado menos gastado. */
     val fondo_rancho: Double,
+    val recibido_total: Double,
+    val gastado_total: Double,
+    val compras_total: Int,
+    val gastado_dia: Double,
+    val compras_dia: Int,
+    val gastado_mes: Double,
+    val compras_mes: Int,
     val por_confirmar: Double,
     val entregas_por_confirmar: Int,
     val recibido_dia: Double,
     val entregas_dia: Int,
     val recibido_mes: Double,
     val entregas_mes: Int,
-    val movimientos: List<MovimientoFondo>
+    val movimientos: List<MovimientoFondo>,
+    val gastos: List<GastoItem>
 )
 
 // ---- Confirmación del fondo por QR (ranchero) ----
@@ -444,4 +459,44 @@ data class AuditoriaResp(
     val limite: Int,
     val filtro: FiltroAuditoria,
     val registros: List<AuditoriaRegistro>
+)
+
+// ===================================================================
+// GASTOS DEL FONDO DEL RANCHO (compras de viveres)
+// ===================================================================
+data class GastoItem(
+    val id_gasto: Int,
+    val monto: Double,
+    val categoria: String,
+    val detalle: String?,
+    val fecha_hora: String?
+)
+
+data class GastoReq(
+    val monto: Double,
+    val categoria: String,
+    val detalle: String?
+)
+
+data class GastoResp(
+    val ok: Boolean,
+    val id_gasto: Int?,
+    val monto: Double,
+    val categoria: String?,
+    val fondo_restante: Double
+)
+
+data class CategoriaTotal(
+    val categoria: String,
+    val compras: Int,
+    val total: Double
+)
+
+data class GastosResp(
+    val anio: Int,
+    val mes: Int,
+    val mes_nombre: String,
+    val total: Double,
+    val por_categoria: List<CategoriaTotal>,
+    val gastos: List<GastoItem>
 )

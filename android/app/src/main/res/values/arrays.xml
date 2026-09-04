@@ -29,4 +29,17 @@
         <item>OPERACION</item>
         <item>FRANCO</item>
     </string-array>
+    <!-- Categorias de gasto del fondo del rancho -->
+    <string-array name="categorias_gasto">
+        <item>PROTEINAS</item>
+        <item>VERDURAS</item>
+        <item>LEGUMBRES</item>
+        <item>ABARROTES</item>
+        <item>LACTEOS</item>
+        <item>FRUTAS</item>
+        <item>GAS</item>
+        <item>TRANSPORTE</item>
+        <item>OTROS</item>
+    </string-array>
+
 </resources>

@@ -1315,16 +1315,25 @@ app.get('/api/tesoreria/resumen', verificarToken, soloRol('TESORERO'), async (re
     const [[pendTot]] = await pool.query(
       "SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM transferencia WHERE estado = 'PENDIENTE'");
 
-    const caja = Number(recTot.m) - Number(confTot.m) - Number(pendTot.m);
+    // La caja refleja el dinero que REALMENTE salio: solo lo confirmado por
+    // el ranchero. Una entrega pendiente todavia no descuenta nada, porque
+    // puede que nunca se escanee el QR (y entonces se anula).
+    const caja = Number(recTot.m) - Number(confTot.m);
+    // Lo que aun puede comprometer: la caja menos lo que ya esta en transito.
+    // Evita que genere dos QR por el mismo dinero.
+    const disponible = caja - Number(pendTot.m);
 
     const [[yo]] = await pool.query('SELECT saldo FROM usuario WHERE id_usuario = ?', [req.usuario.id_usuario]);
 
-    // Fondo acreditado (solo confirmadas) y monto en tránsito por ranchero
+    // Por cada ranchero: lo recibido y confirmado, lo que ya gasto en viveres
+    // y lo que le queda disponible, mas lo que tiene en transito sin escanear.
     const [fondos] = await pool.query(`
       SELECT us.id_usuario, p.cedula, p.nombres, p.apellidos, g.abreviatura AS grado,
              us.saldo AS saldo_comensal,
              COALESCE((SELECT SUM(t.monto) FROM transferencia t
-                       WHERE t.id_ranchero = us.id_usuario AND t.estado='CONFIRMADA'),0) AS fondo_rancho,
+                       WHERE t.id_ranchero = us.id_usuario AND t.estado='CONFIRMADA'),0) AS recibido,
+             COALESCE((SELECT SUM(gr.monto) FROM gasto_rancho gr
+                       WHERE gr.id_ranchero = us.id_usuario),0) AS gastado,
              COALESCE((SELECT SUM(t.monto) FROM transferencia t
                        WHERE t.id_ranchero = us.id_usuario AND t.estado='PENDIENTE'),0) AS en_transito
       FROM usuario us
@@ -1351,6 +1360,7 @@ app.get('/api/tesoreria/resumen', verificarToken, soloRol('TESORERO'), async (re
         en_transito: redondear(Number(pendTot.m)),
         pendientes: Number(pendTot.n),
         caja: redondear(caja),
+        disponible: redondear(disponible),
       },
       mi_saldo_comensal: Number(yo ? yo.saldo : 0),
       rancheros: fondos.map((r) => ({
@@ -1358,7 +1368,9 @@ app.get('/api/tesoreria/resumen', verificarToken, soloRol('TESORERO'), async (re
         cedula: r.cedula,
         persona: `${r.grado || ''} ${r.apellidos || ''} ${r.nombres || ''}`.trim(),
         saldo_comensal: Number(r.saldo_comensal),
-        fondo_rancho: redondear(Number(r.fondo_rancho)),
+        recibido: redondear(Number(r.recibido)),
+        gastado: redondear(Number(r.gastado)),
+        fondo_rancho: redondear(Number(r.recibido) - Number(r.gastado)),
         en_transito: redondear(Number(r.en_transito)),
       })),
     });
@@ -1383,15 +1395,22 @@ app.post('/api/tesoreria/transferencias', verificarToken, soloRol('TESORERO'), a
     if (r.length === 0)
       return res.status(404).json({ error: 'El destinatario no es un ranchero activo' });
 
-    // La caja descuenta lo ya confirmado y lo que está en tránsito, para no
-    // comprometer dos veces el mismo dinero.
+    // La caja solo baja con lo CONFIRMADO, pero para autorizar una entrega
+    // nueva se descuenta ademas lo que ya esta en transito: si no, se podrian
+    // emitir dos QR por el mismo dinero y ambos acabarian confirmandose.
     const [[recTot]] = await pool.query('SELECT COALESCE(SUM(monto),0) m FROM recarga');
-    const [[compr]] = await pool.query(
-      "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE estado <> 'ANULADA'");
-    const caja = Number(recTot.m) - Number(compr.m);
-    if (monto > caja + 0.001)
+    const [[confTot]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE estado = 'CONFIRMADA'");
+    const [[pendTot]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE estado = 'PENDIENTE'");
+    const caja = Number(recTot.m) - Number(confTot.m);
+    const disponible = caja - Number(pendTot.m);
+    if (monto > disponible + 0.001)
       return res.status(400).json({
-        error: `La entrega de $${redondear(monto)} supera la caja disponible de $${redondear(caja)}`,
+        error: Number(pendTot.m) > 0
+          ? `La entrega de $${redondear(monto)} supera lo disponible ($${redondear(disponible)}). ` +
+            `Tu caja es $${redondear(caja)} pero tienes $${redondear(Number(pendTot.m))} en entregas sin confirmar.`
+          : `La entrega de $${redondear(monto)} supera tu caja de $${redondear(caja)}`,
       });
 
     const token = crypto.randomBytes(16).toString('hex');
@@ -1413,8 +1432,10 @@ app.post('/api/tesoreria/transferencias', verificarToken, soloRol('TESORERO'), a
       estado: 'PENDIENTE',
       monto: redondear(monto),
       fecha_hora: fila ? fila.fecha_hora : null,
-      caja_restante: redondear(caja - monto),
-      mensaje: 'Muestra el QR al ranchero para que lo escanee y confirme la recepción.',
+      // La caja NO cambia todavia: solo baja cuando el ranchero escanea.
+      caja: redondear(caja),
+      disponible_restante: redondear(disponible - monto),
+      mensaje: 'Tu caja no baja todavía. Se descuenta cuando el ranchero escanee el QR.',
     });
   } catch (e) {
     console.error(e);
@@ -1566,6 +1587,18 @@ app.get('/api/rancho/fondo', verificarToken, soloRol('RANCHERO'), async (req, re
     const [[pend]] = await pool.query(
       "SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM transferencia WHERE id_ranchero=? AND estado='PENDIENTE'", [id]);
 
+    // Gastos en viveres: lo que hace bajar el fondo.
+    const [[gTot]] = await pool.query(
+      'SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM gasto_rancho WHERE id_ranchero=?', [id]);
+    const [[gDia]] = await pool.query(
+      'SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM gasto_rancho WHERE id_ranchero=? AND DATE(fecha_hora)=?', [id, fecha]);
+    const [[gMes]] = await pool.query(
+      'SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM gasto_rancho WHERE id_ranchero=? AND YEAR(fecha_hora)=? AND MONTH(fecha_hora)=?', [id, anio, mes]);
+    const [gastos] = await pool.query(
+      `SELECT id_gasto, monto, categoria, detalle, fecha_hora
+       FROM gasto_rancho WHERE id_ranchero = ?
+       ORDER BY fecha_hora DESC LIMIT 100`, [id]);
+
     const [movs] = await pool.query(`
       SELECT t.monto, t.concepto, t.fecha_hora, t.confirmado_en, t.estado,
              p.nombres, p.apellidos, g.abreviatura AS grado
@@ -1579,13 +1612,28 @@ app.get('/api/rancho/fondo', verificarToken, soloRol('RANCHERO'), async (req, re
     res.json({
       fecha, anio, mes, mes_nombre: MESES[mes - 1],
       saldo_comensal: Number(yo ? yo.saldo : 0),
-      fondo_rancho: redondear(Number(tot.m)),
+      // Lo que queda para cocinar: lo confirmado menos lo ya gastado.
+      fondo_rancho: redondear(Number(tot.m) - Number(gTot.m)),
+      recibido_total: redondear(Number(tot.m)),
+      gastado_total: redondear(Number(gTot.m)),
+      compras_total: Number(gTot.n),
+      gastado_dia: redondear(Number(gDia.m)),
+      compras_dia: Number(gDia.n),
+      gastado_mes: redondear(Number(gMes.m)),
+      compras_mes: Number(gMes.n),
       por_confirmar: redondear(Number(pend.m)),
       entregas_por_confirmar: Number(pend.n),
       recibido_dia: redondear(Number(dia.m)),
       entregas_dia: Number(dia.n),
       recibido_mes: redondear(Number(mesR.m)),
       entregas_mes: Number(mesR.n),
+      gastos: gastos.map((x) => ({
+        id_gasto: x.id_gasto,
+        monto: Number(x.monto),
+        categoria: x.categoria,
+        detalle: x.detalle,
+        fecha_hora: x.fecha_hora,
+      })),
       movimientos: movs.map((m) => ({
         monto: Number(m.monto),
         concepto: m.concepto,
@@ -1598,6 +1646,111 @@ app.get('/api/rancho/fondo', verificarToken, soloRol('RANCHERO'), async (req, re
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error al consultar el fondo del rancho' });
+  }
+});
+
+// --- Gastos del fondo del rancho (compras de víveres) ---
+// Sin esto el fondo nunca bajaría y el ranchero tendría dinero infinito.
+const CATEGORIAS_GASTO = [
+  'PROTEINAS', 'VERDURAS', 'LEGUMBRES', 'ABARROTES',
+  'LACTEOS', 'FRUTAS', 'GAS', 'TRANSPORTE', 'OTROS',
+];
+
+app.post('/api/rancho/gastos', verificarToken, soloRol('RANCHERO'), async (req, res) => {
+  const monto = Number(req.body.monto);
+  const categoria = String(req.body.categoria || 'OTROS').trim().toUpperCase();
+  const detalle = String(req.body.detalle || '').trim().slice(0, 255) || null;
+  const id = req.usuario.id_usuario;
+
+  if (isNaN(monto) || monto <= 0)
+    return res.status(400).json({ error: 'Indica un monto válido' });
+  if (!CATEGORIAS_GASTO.includes(categoria))
+    return res.status(400).json({ error: 'Categoría no válida' });
+
+  try {
+    // No se puede gastar más de lo que hay en el fondo.
+    const [[recibido]] = await pool.query(
+      "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE id_ranchero=? AND estado='CONFIRMADA'", [id]);
+    const [[gastado]] = await pool.query(
+      'SELECT COALESCE(SUM(monto),0) m FROM gasto_rancho WHERE id_ranchero=?', [id]);
+    const fondo = Number(recibido.m) - Number(gastado.m);
+
+    if (monto > fondo + 0.001)
+      return res.status(400).json({
+        error: `El gasto de $${redondear(monto)} supera tu fondo disponible de $${redondear(fondo)}`,
+      });
+
+    const [ins] = await pool.query(
+      'INSERT INTO gasto_rancho (id_ranchero, monto, categoria, detalle) VALUES (?,?,?,?)',
+      [id, monto, categoria, detalle]);
+
+    await auditar(id, 'GASTO_RANCHO',
+      `Compra de ${redondear(monto)} en ${categoria}${detalle ? ' - ' + detalle : ''}`);
+
+    res.status(201).json({
+      ok: true,
+      id_gasto: ins.insertId,
+      monto: redondear(monto),
+      categoria,
+      fondo_restante: redondear(fondo - monto),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al registrar el gasto' });
+  }
+});
+
+// --- Anular un gasto mal registrado (devuelve el dinero al fondo) ---
+app.delete('/api/rancho/gastos/:id', verificarToken, soloRol('RANCHERO'), async (req, res) => {
+  const idGasto = Number(req.params.id);
+  try {
+    // Solo puede borrar sus propios gastos.
+    const [r] = await pool.query(
+      'SELECT monto FROM gasto_rancho WHERE id_gasto = ? AND id_ranchero = ?',
+      [idGasto, req.usuario.id_usuario]);
+    if (r.length === 0)
+      return res.status(404).json({ error: 'Gasto no encontrado' });
+
+    await pool.query('DELETE FROM gasto_rancho WHERE id_gasto = ?', [idGasto]);
+    await auditar(req.usuario.id_usuario, 'GASTO_ANULADO',
+      `Anuló el gasto ${idGasto} por ${redondear(Number(r[0].monto))}`);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al anular el gasto' });
+  }
+});
+
+// --- Resumen de gastos por categoría (para el informe del ranchero) ---
+app.get('/api/rancho/gastos', verificarToken, soloRol('RANCHERO'), async (req, res) => {
+  const { anio, mes } = periodoDe(req.query);
+  const id = req.usuario.id_usuario;
+  try {
+    const [porCat] = await pool.query(
+      `SELECT categoria, COUNT(*) n, COALESCE(SUM(monto),0) m
+       FROM gasto_rancho
+       WHERE id_ranchero=? AND YEAR(fecha_hora)=? AND MONTH(fecha_hora)=?
+       GROUP BY categoria ORDER BY m DESC`, [id, anio, mes]);
+    const [detalle] = await pool.query(
+      `SELECT id_gasto, monto, categoria, detalle, fecha_hora
+       FROM gasto_rancho
+       WHERE id_ranchero=? AND YEAR(fecha_hora)=? AND MONTH(fecha_hora)=?
+       ORDER BY fecha_hora DESC LIMIT 200`, [id, anio, mes]);
+
+    res.json({
+      anio, mes, mes_nombre: MESES[mes - 1],
+      total: redondear(porCat.reduce((a, c) => a + Number(c.m), 0)),
+      por_categoria: porCat.map((c) => ({
+        categoria: c.categoria, compras: Number(c.n), total: redondear(Number(c.m)),
+      })),
+      gastos: detalle.map((x) => ({
+        id_gasto: x.id_gasto, monto: Number(x.monto), categoria: x.categoria,
+        detalle: x.detalle, fecha_hora: x.fecha_hora,
+      })),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al consultar los gastos' });
   }
 });
 
