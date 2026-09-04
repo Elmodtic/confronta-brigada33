@@ -69,6 +69,16 @@ interface Api {
     @POST("api/usuarios/{id}/password")
     suspend fun resetPasswordUsuario(@Path("id") id: Int, @Body body: AdminPassReq): Response<OkResp>
 
+    // Cargos unicos (tesorero / ranchero) y su relevo
+    @GET("api/cargos")
+    suspend fun cargos(): Response<CargosResp>
+
+    @POST("api/usuarios/{id}/relevo")
+    suspend fun relevarCargo(@Path("id") id: Int, @Body body: RelevoReq): Response<RelevoResp>
+
+    @GET("api/relevos")
+    suspend fun relevos(): Response<List<RelevoItem>>
+
     @GET("api/auditoria")
     suspend fun auditoria(
         @Query("fecha") fecha: String? = null,

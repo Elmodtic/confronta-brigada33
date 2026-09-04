@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import com.brigada.confronta.data.AdminPassReq
 import com.brigada.confronta.data.ApiClient
 import com.brigada.confronta.data.UpdateUsuarioReq
+import com.brigada.confronta.data.RelevoReq
 import com.brigada.confronta.data.UsuarioAdmin
 import com.brigada.confronta.databinding.ActivityUsuariosBinding
 import com.brigada.confronta.databinding.DialogUsuarioBinding
@@ -143,6 +144,55 @@ class UsuariosActivity : AppCompatActivity() {
             .show()
     }
 
+    /**
+     * El cargo ya tiene titular. Se explica el traspaso y, si el admin
+     * acepta, se releva: el saliente entrega el fondo operativo y vuelve a
+     * ser comensal comun. Los saldos personales no se tocan.
+     */
+    private fun ofrecerRelevo(u: UsuarioAdmin, rol: String, motivo: String) {
+        val nombre = listOfNotNull(u.nombres, u.apellidos).joinToString(" ").ifBlank { u.username }
+        AlertDialog.Builder(this)
+            .setTitle("Relevar el cargo de $rol")
+            .setMessage(
+                "$motivo\n\n" +
+                "Si continúas:\n" +
+                "  · $nombre pasa a ser $rol\n" +
+                "  · el titular actual vuelve a ser OPERADOR\n" +
+                (if (rol == "RANCHERO")
+                    "  · el fondo del rancho pasa al nuevo titular\n"
+                 else
+                    "  · queda constancia del efectivo entregado\n") +
+                "\nLos saldos personales para comer NO se tocan.")
+            .setPositiveButton("Relevar") { _, _ -> relevar(u, rol) }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun relevar(u: UsuarioAdmin, rol: String) {
+        b.progreso.visibility = View.VISIBLE
+        lifecycleScope.launch {
+            try {
+                val r = ApiClient.api.relevarCargo(u.id_usuario, RelevoReq(rol, null))
+                if (r.isSuccessful && r.body() != null) {
+                    val x = r.body()!!
+                    AlertDialog.Builder(this@UsuariosActivity)
+                        .setTitle("Cargo relevado")
+                        .setMessage(
+                            "Sale: ${x.saliente?.persona ?: "cargo vacante"}\n" +
+                            "Entra: ${x.entrante?.persona ?: x.entrante?.username ?: "-"}\n" +
+                            "Traspasado: ${money(x.monto_traspasado)}\n\n" +
+                            (x.mensaje ?: ""))
+                        .setPositiveButton("Listo") { _, _ -> buscar() }
+                        .show()
+                } else toast(detalleError(r).mensaje)
+            } catch (e: Exception) {
+                toast("No se pudo conectar con el servidor.\n${e.message}")
+            } finally {
+                b.progreso.visibility = View.GONE
+            }
+        }
+    }
+
     private fun guardar(u: UsuarioAdmin, rol: String, activo: Boolean, nuevaClave: String) {
         // La clave nueva se valida contra la misma política del servidor.
         if (nuevaClave.isNotEmpty()) {
@@ -157,7 +207,14 @@ class UsuariosActivity : AppCompatActivity() {
                         UpdateUsuarioReq(
                             rol = if (rol != u.rol) rol else null,
                             activo = if (activo != u.activo) activo else null))
-                    if (!r.isSuccessful) { toast(errorDeApi(r)); return@launch }
+                    if (!r.isSuccessful) {
+                        val err = detalleError(r)
+                        // TESORERO y RANCHERO son cargos unicos. Si ya hay
+                        // titular, se ofrece relevarlo en vez de solo fallar.
+                        if (err.cargoOcupado) ofrecerRelevo(u, rol, err.mensaje)
+                        else toast(err.mensaje)
+                        return@launch
+                    }
                 }
                 if (nuevaClave.isNotEmpty()) {
                     val r = ApiClient.api.resetPasswordUsuario(u.id_usuario, AdminPassReq(nuevaClave))
