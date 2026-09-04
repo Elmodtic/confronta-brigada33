@@ -500,3 +500,44 @@ data class GastosResp(
     val por_categoria: List<CategoriaTotal>,
     val gastos: List<GastoItem>
 )
+
+// ===================================================================
+// CARGOS UNICOS Y RELEVO
+// Solo puede haber un TESORERO y un RANCHERO activos. Para cambiar de
+// titular se releva el cargo, y el fondo operativo pasa al que entra.
+// El saldo de comensal NO se traspasa: es dinero personal.
+// ===================================================================
+data class TitularCargo(
+    val id_usuario: Int,
+    val username: String?,
+    val persona: String?,
+    val valor_a_traspasar: Double
+)
+
+data class CargosResp(
+    val TESORERO: TitularCargo?,
+    val RANCHERO: TitularCargo?
+)
+
+data class RelevoReq(val rol: String, val observacion: String?)
+
+data class PersonaRelevo(val id_usuario: Int, val persona: String?, val username: String?)
+
+data class RelevoResp(
+    val ok: Boolean,
+    val rol: String?,
+    val saliente: PersonaRelevo?,
+    val entrante: PersonaRelevo?,
+    val monto_traspasado: Double,
+    val mensaje: String?
+)
+
+data class RelevoItem(
+    val id_relevo: Int,
+    val rol: String,
+    val monto: Double,
+    val observacion: String?,
+    val fecha_hora: String?,
+    val saliente: String?,
+    val entrante: String?
+)

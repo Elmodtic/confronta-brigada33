@@ -1011,6 +1011,27 @@ app.put('/api/usuarios/:id', verificarToken, soloRol('ADMIN'), async (req, res) 
 
   vals.push(id);
   try {
+    // TESORERO y RANCHERO son cargos unicos: solo un titular activo de cada
+    // uno. Para cambiar de titular hay que relevar el cargo, no reasignarlo
+    // a la ligera, porque el fondo del rancho tiene que pasar al que entra.
+    const rolFinal = rol != null ? rol : (await rolDe(id));
+    if (CARGOS_UNICOS.includes(rolFinal) && (activo == null || activo)) {
+      const titular = await titularDelCargo(rolFinal);
+      if (titular && titular.id_usuario !== id) {
+        return res.status(409).json({
+          error: `Ya hay un ${rolFinal} activo: ${nombreDe(titular)}. ` +
+                 'Usa el relevo de cargo para cambiarlo y traspasar los valores.',
+          cargo_ocupado: true,
+          rol: rolFinal,
+          titular_actual: {
+            id_usuario: titular.id_usuario,
+            username: titular.username,
+            persona: nombreDe(titular),
+          },
+        });
+      }
+    }
+
     const [r] = await pool.query(
       `UPDATE usuario SET ${campos.join(', ')} WHERE id_usuario = ?`, vals);
     if (r.affectedRows === 0)
@@ -1106,6 +1127,207 @@ app.get('/api/auditoria', verificarToken, soloRol('ADMIN'), async (req, res) => 
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error al consultar la auditoría' });
+  }
+});
+
+// ===============================================================
+// CARGOS ÚNICOS Y RELEVO (acta de entrega-recepción)
+//
+// Solo puede haber UN tesorero y UN ranchero activos a la vez. Para
+// cambiar de titular hay que relevar el cargo: el saliente entrega, el
+// entrante recibe y queda registrado cuánto dinero se traspasó.
+//
+// Se traspasa el FONDO OPERATIVO del rancho (la plata para comprar
+// víveres). NO se traspasa el saldo de comensal: ese es dinero personal
+// de cada quien para su propia comida y se queda con la persona.
+// ===============================================================
+const CARGOS_UNICOS = ['TESORERO', 'RANCHERO'];
+
+// Nombre presentable de una fila con grado/nombres/apellidos.
+function nombreDe(u) {
+  if (!u) return '-';
+  const n = `${u.grado || ''} ${u.apellidos || ''} ${u.nombres || ''}`.trim();
+  return n || u.username || '-';
+}
+
+async function rolDe(idUsuario) {
+  const [r] = await pool.query('SELECT rol FROM usuario WHERE id_usuario = ?', [idUsuario]);
+  return r.length ? r[0].rol : null;
+}
+
+// Titular activo de un cargo único, o null si está vacante.
+async function titularDelCargo(rol) {
+  const [rows] = await pool.query(`
+    SELECT us.id_usuario, us.username, p.nombres, p.apellidos, g.abreviatura AS grado
+    FROM usuario us
+    LEFT JOIN personal p ON us.id_personal = p.id_personal
+    LEFT JOIN grado g    ON p.id_grado     = g.id_grado
+    WHERE us.rol = ? AND us.activo = 1
+    ORDER BY us.id_usuario LIMIT 1`, [rol]);
+  return rows[0] || null;
+}
+
+// Fondo operativo de un ranchero, contando los relevos en ambos sentidos.
+async function fondoDeRanchero(idRanchero) {
+  const [[r]] = await pool.query(`
+    SELECT
+      COALESCE((SELECT SUM(monto) FROM transferencia
+                WHERE id_ranchero = ? AND estado = 'CONFIRMADA'),0)
+    - COALESCE((SELECT SUM(monto) FROM gasto_rancho   WHERE id_ranchero = ?),0)
+    + COALESCE((SELECT SUM(monto) FROM relevo
+                WHERE rol = 'RANCHERO' AND id_entrante = ?),0)
+    - COALESCE((SELECT SUM(monto) FROM relevo
+                WHERE rol = 'RANCHERO' AND id_saliente = ?),0) AS fondo`,
+    [idRanchero, idRanchero, idRanchero, idRanchero]);
+  return Number(r.fondo);
+}
+
+// Caja institucional del tesorero (no es de una persona: es de la unidad).
+async function cajaInstitucional() {
+  const [[rec]] = await pool.query('SELECT COALESCE(SUM(monto),0) m FROM recarga');
+  const [[con]] = await pool.query(
+    "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE estado = 'CONFIRMADA'");
+  return Number(rec.m) - Number(con.m);
+}
+
+// --- Quién ocupa cada cargo único (para que el admin lo vea antes) ---
+app.get('/api/cargos', verificarToken, soloRol('ADMIN'), async (_req, res) => {
+  try {
+    const salida = {};
+    for (const rol of CARGOS_UNICOS) {
+      const t = await titularDelCargo(rol);
+      salida[rol] = t
+        ? {
+            id_usuario: t.id_usuario,
+            username: t.username,
+            persona: nombreDe(t),
+            valor_a_traspasar: rol === 'RANCHERO'
+              ? redondear(await fondoDeRanchero(t.id_usuario))
+              : redondear(await cajaInstitucional()),
+          }
+        : null;
+    }
+    res.json(salida);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al consultar los cargos' });
+  }
+});
+
+// --- Relevo del cargo: el saliente entrega y el entrante recibe ---
+app.post('/api/usuarios/:id/relevo', verificarToken, soloRol('ADMIN'), async (req, res) => {
+  const idEntrante = Number(req.params.id);
+  const rol = String(req.body.rol || '').trim().toUpperCase();
+  const observacion = String(req.body.observacion || '').trim().slice(0, 255) || null;
+
+  if (!CARGOS_UNICOS.includes(rol))
+    return res.status(400).json({ error: 'Solo se relevan los cargos de TESORERO y RANCHERO' });
+  if (idEntrante === req.usuario.id_usuario)
+    return res.status(400).json({ error: 'No puedes asignarte el cargo a ti mismo desde aquí' });
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [ent] = await conn.query(
+      'SELECT id_usuario, username, rol, activo, id_personal FROM usuario WHERE id_usuario = ? FOR UPDATE',
+      [idEntrante]);
+    if (ent.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: 'El usuario que entra no existe' });
+    }
+    if (!ent[0].activo) {
+      await conn.rollback();
+      return res.status(400).json({ error: 'El usuario que entra está inactivo' });
+    }
+    if (!ent[0].id_personal) {
+      await conn.rollback();
+      return res.status(400).json({ error: 'El usuario que entra no tiene ficha de personal' });
+    }
+    if (ent[0].rol === rol) {
+      await conn.rollback();
+      return res.status(409).json({ error: `Esa persona ya es ${rol}` });
+    }
+
+    const titular = await titularDelCargo(rol);
+
+    // Lo que se traspasa. En el rancho es el fondo operativo; en tesorería
+    // la caja es de la unidad y no cambia de dueño, pero se deja constancia
+    // del efectivo que pasa de mano.
+    let monto = 0;
+    if (titular) {
+      monto = rol === 'RANCHERO'
+        ? await fondoDeRanchero(titular.id_usuario)
+        : await cajaInstitucional();
+      if (monto < 0) monto = 0;
+    }
+
+    await conn.query(
+      `INSERT INTO relevo (rol, id_saliente, id_entrante, monto, observacion, id_admin)
+       VALUES (?,?,?,?,?,?)`,
+      [rol, titular ? titular.id_usuario : null, idEntrante,
+       redondear(monto), observacion, req.usuario.id_usuario]);
+
+    // El saliente deja el cargo y vuelve a ser comensal comun. Conserva su
+    // saldo personal: eso nunca fue del cargo.
+    if (titular) {
+      await conn.query("UPDATE usuario SET rol = 'OPERADOR' WHERE id_usuario = ?",
+        [titular.id_usuario]);
+    }
+    await conn.query('UPDATE usuario SET rol = ? WHERE id_usuario = ?', [rol, idEntrante]);
+
+    await conn.commit();
+
+    await auditar(req.usuario.id_usuario, 'RELEVO_CARGO',
+      `${rol}: ${titular ? nombreDe(titular) : 'cargo vacante'} -> usuario ${idEntrante}` +
+      `, traspaso ${redondear(monto)}${observacion ? ' - ' + observacion : ''}`);
+
+    res.status(201).json({
+      ok: true,
+      rol,
+      saliente: titular ? { id_usuario: titular.id_usuario, persona: nombreDe(titular) } : null,
+      entrante: { id_usuario: idEntrante, username: ent[0].username },
+      monto_traspasado: redondear(monto),
+      mensaje: rol === 'RANCHERO'
+        ? 'El fondo del rancho pasó al nuevo ranchero. Los saldos personales no se tocaron.'
+        : 'Queda constancia del efectivo entregado. La caja es de la unidad y sigue igual.',
+    });
+  } catch (e) {
+    await conn.rollback();
+    console.error(e);
+    res.status(500).json({ error: 'Error al relevar el cargo' });
+  } finally {
+    conn.release();
+  }
+});
+
+// --- Historial de relevos ---
+app.get('/api/relevos', verificarToken, soloRol('ADMIN'), async (_req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT r.id_relevo, r.rol, r.monto, r.observacion, r.fecha_hora,
+             ps.nombres AS sal_nom, ps.apellidos AS sal_ape, gs.abreviatura AS sal_gra,
+             pe.nombres AS ent_nom, pe.apellidos AS ent_ape, ge.abreviatura AS ent_gra
+      FROM relevo r
+      LEFT JOIN usuario  us ON r.id_saliente = us.id_usuario
+      LEFT JOIN personal ps ON us.id_personal = ps.id_personal
+      LEFT JOIN grado    gs ON ps.id_grado    = gs.id_grado
+      LEFT JOIN usuario  ue ON r.id_entrante = ue.id_usuario
+      LEFT JOIN personal pe ON ue.id_personal = pe.id_personal
+      LEFT JOIN grado    ge ON pe.id_grado    = ge.id_grado
+      ORDER BY r.fecha_hora DESC LIMIT 100`);
+    res.json(rows.map((r) => ({
+      id_relevo: r.id_relevo,
+      rol: r.rol,
+      monto: Number(r.monto),
+      observacion: r.observacion,
+      fecha_hora: r.fecha_hora,
+      saliente: nombreDe({ grado: r.sal_gra, nombres: r.sal_nom, apellidos: r.sal_ape }),
+      entrante: nombreDe({ grado: r.ent_gra, nombres: r.ent_nom, apellidos: r.ent_ape }),
+    })));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al consultar los relevos' });
   }
 });
 
@@ -1334,6 +1556,10 @@ app.get('/api/tesoreria/resumen', verificarToken, soloRol('TESORERO'), async (re
                        WHERE t.id_ranchero = us.id_usuario AND t.estado='CONFIRMADA'),0) AS recibido,
              COALESCE((SELECT SUM(gr.monto) FROM gasto_rancho gr
                        WHERE gr.id_ranchero = us.id_usuario),0) AS gastado,
+             COALESCE((SELECT SUM(rl.monto) FROM relevo rl
+                       WHERE rl.rol='RANCHERO' AND rl.id_entrante = us.id_usuario),0) AS recibido_relevo,
+             COALESCE((SELECT SUM(rl.monto) FROM relevo rl
+                       WHERE rl.rol='RANCHERO' AND rl.id_saliente = us.id_usuario),0) AS entregado_relevo,
              COALESCE((SELECT SUM(t.monto) FROM transferencia t
                        WHERE t.id_ranchero = us.id_usuario AND t.estado='PENDIENTE'),0) AS en_transito
       FROM usuario us
@@ -1370,7 +1596,9 @@ app.get('/api/tesoreria/resumen', verificarToken, soloRol('TESORERO'), async (re
         saldo_comensal: Number(r.saldo_comensal),
         recibido: redondear(Number(r.recibido)),
         gastado: redondear(Number(r.gastado)),
-        fondo_rancho: redondear(Number(r.recibido) - Number(r.gastado)),
+        fondo_rancho: redondear(
+          Number(r.recibido) - Number(r.gastado)
+          + Number(r.recibido_relevo) - Number(r.entregado_relevo)),
         en_transito: redondear(Number(r.en_transito)),
       })),
     });
@@ -1549,9 +1777,7 @@ app.post('/api/rancho/confirmar', verificarToken, soloRol('RANCHERO'), async (re
     await auditar(req.usuario.id_usuario, 'FONDO_CONFIRMADO',
       `Confirmó la recepción de $${redondear(Number(t.monto))} de la entrega ${t.id_transferencia}`);
 
-    const [[tot]] = await pool.query(
-      "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE id_ranchero=? AND estado='CONFIRMADA'",
-      [req.usuario.id_usuario]);
+    const fondoTrasConfirmar = await fondoDeRanchero(req.usuario.id_usuario);
 
     res.json({
       ok: true,
@@ -1560,7 +1786,7 @@ app.post('/api/rancho/confirmar', verificarToken, soloRol('RANCHERO'), async (re
       concepto: t.concepto,
       entregado_en: t.fecha_hora,
       tesorero: `${t.grado || ''} ${t.apellidos || ''} ${t.nombres || ''}`.trim(),
-      fondo_rancho: redondear(Number(tot.m)),
+      fondo_rancho: redondear(fondoTrasConfirmar),
     });
   } catch (e) {
     await conn.rollback();
@@ -1584,6 +1810,8 @@ app.get('/api/rancho/fondo', verificarToken, soloRol('RANCHERO'), async (req, re
       "SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM transferencia WHERE id_ranchero=? AND estado='CONFIRMADA' AND YEAR(confirmado_en)=? AND MONTH(confirmado_en)=?", [id, anio, mes]);
     const [[tot]] = await pool.query(
       "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE id_ranchero=? AND estado='CONFIRMADA'", [id]);
+    // El fondo real contempla ademas lo recibido o entregado en un relevo.
+    const fondoActual = await fondoDeRanchero(id);
     const [[pend]] = await pool.query(
       "SELECT COALESCE(SUM(monto),0) m, COUNT(*) n FROM transferencia WHERE id_ranchero=? AND estado='PENDIENTE'", [id]);
 
@@ -1613,7 +1841,7 @@ app.get('/api/rancho/fondo', verificarToken, soloRol('RANCHERO'), async (req, re
       fecha, anio, mes, mes_nombre: MESES[mes - 1],
       saldo_comensal: Number(yo ? yo.saldo : 0),
       // Lo que queda para cocinar: lo confirmado menos lo ya gastado.
-      fondo_rancho: redondear(Number(tot.m) - Number(gTot.m)),
+      fondo_rancho: redondear(fondoActual),
       recibido_total: redondear(Number(tot.m)),
       gastado_total: redondear(Number(gTot.m)),
       compras_total: Number(gTot.n),
@@ -1669,11 +1897,7 @@ app.post('/api/rancho/gastos', verificarToken, soloRol('RANCHERO'), async (req, 
 
   try {
     // No se puede gastar más de lo que hay en el fondo.
-    const [[recibido]] = await pool.query(
-      "SELECT COALESCE(SUM(monto),0) m FROM transferencia WHERE id_ranchero=? AND estado='CONFIRMADA'", [id]);
-    const [[gastado]] = await pool.query(
-      'SELECT COALESCE(SUM(monto),0) m FROM gasto_rancho WHERE id_ranchero=?', [id]);
-    const fondo = Number(recibido.m) - Number(gastado.m);
+    const fondo = await fondoDeRanchero(id);
 
     if (monto > fondo + 0.001)
       return res.status(400).json({

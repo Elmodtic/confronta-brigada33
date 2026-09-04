@@ -95,3 +95,27 @@ fun fechaHora(iso: String?): String {
         }
     }
 }
+
+/**
+ * Detalle del error devuelto por la API.
+ *
+ * OJO: errorBody() solo se puede leer UNA vez, asi que aqui se parsea de
+ * golpe todo lo que hace falta en vez de tener varias funciones que lo
+ * consuman por separado.
+ */
+data class ErrorApi(val mensaje: String, val cargoOcupado: Boolean)
+
+fun detalleError(resp: Response<*>): ErrorApi {
+    return try {
+        val raw = resp.errorBody()?.string()
+        if (raw.isNullOrBlank()) ErrorApi("Error ${resp.code()}", false)
+        else {
+            val map = Gson().fromJson(raw, Map::class.java)
+            ErrorApi(
+                (map["error"] as? String) ?: "Error ${resp.code()}",
+                (map["cargo_ocupado"] as? Boolean) == true)
+        }
+    } catch (e: Exception) {
+        ErrorApi("Error ${resp.code()}", false)
+    }
+}
