@@ -3,6 +3,7 @@ package com.brigada.confronta.data
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -147,6 +148,19 @@ interface Api {
     // El ranchero escanea el QR del tesorero y confirma la recepcion
     @POST("api/rancho/confirmar")
     suspend fun confirmarFondo(@Body body: ConfirmarFondoReq): Response<ConfirmarFondoResp>
+
+    // Gastos del fondo: sin registrarlos el fondo nunca bajaria
+    @POST("api/rancho/gastos")
+    suspend fun registrarGasto(@Body body: GastoReq): Response<GastoResp>
+
+    @DELETE("api/rancho/gastos/{id}")
+    suspend fun anularGasto(@Path("id") id: Int): Response<OkResp>
+
+    @GET("api/rancho/gastos")
+    suspend fun gastos(
+        @Query("anio") anio: Int? = null,
+        @Query("mes") mes: Int? = null
+    ): Response<GastosResp>
 
     @GET("api/rancho/fondo")
     suspend fun fondoRancho(

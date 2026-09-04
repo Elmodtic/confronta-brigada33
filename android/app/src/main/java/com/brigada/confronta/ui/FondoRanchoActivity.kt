@@ -12,6 +12,8 @@ import androidx.lifecycle.lifecycleScope
 import com.brigada.confronta.data.ApiClient
 import com.brigada.confronta.data.ConfirmarFondoReq
 import com.brigada.confronta.data.FondoRancho
+import com.brigada.confronta.data.GastoItem
+import com.brigada.confronta.data.GastoReq
 import com.brigada.confronta.databinding.ActivityFondoRanchoBinding
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -51,6 +53,7 @@ class FondoRanchoActivity : AppCompatActivity() {
         b.btnFecha.setOnClickListener { elegirFecha() }
         b.btnEscanear.setOnClickListener { escanear() }
         b.btnConfirmar.setOnClickListener { confirmar() }
+        b.btnRegistrarGasto.setOnClickListener { registrarGasto() }
         actualizarBotonFecha()
         cargar()
     }
@@ -96,6 +99,70 @@ class FondoRanchoActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Registra una compra hecha con el fondo. Es lo unico que hace bajar el
+     * saldo para cocinar: sin esto el ranchero tendria dinero infinito.
+     */
+    private fun registrarGasto() {
+        val monto = b.etMontoGasto.text?.toString()?.trim()?.toDoubleOrNull()
+        if (monto == null || monto <= 0) {
+            b.etMontoGasto.error = "Monto invalido"
+            b.etMontoGasto.requestFocus()
+            toast("Escribe cuanto gastaste"); return
+        }
+        val categoria = b.spCategoria.selectedItem?.toString() ?: "OTROS"
+        val detalle = b.etDetalleGasto.text?.toString()?.trim().orEmpty()
+
+        AlertDialog.Builder(this)
+            .setTitle("Confirmar compra")
+            .setMessage("¿Registrar ${money(monto)} en $categoria?\n\n" +
+                    "Se descontará de tu fondo para cocinar.")
+            .setPositiveButton("Registrar") { _, _ ->
+                b.progreso.visibility = View.VISIBLE
+                b.btnRegistrarGasto.isEnabled = false
+                lifecycleScope.launch {
+                    try {
+                        val r = ApiClient.api.registrarGasto(
+                            GastoReq(monto, categoria, detalle.ifBlank { null }))
+                        if (r.isSuccessful && r.body() != null) {
+                            b.etMontoGasto.text = null
+                            b.etDetalleGasto.text = null
+                            toast("Compra registrada. Fondo restante: ${money(r.body()!!.fondo_restante)}")
+                            cargar()
+                        } else toast(errorDeApi(r))
+                    } catch (e: Exception) {
+                        toast("No se pudo conectar con el servidor.\n${e.message}")
+                    } finally {
+                        b.progreso.visibility = View.GONE
+                        b.btnRegistrarGasto.isEnabled = true
+                    }
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    /** Permite corregir una compra mal anotada: el dinero vuelve al fondo. */
+    private fun anularGasto(g: GastoItem) {
+        AlertDialog.Builder(this)
+            .setTitle("Anular compra")
+            .setMessage("${g.categoria} · ${money(g.monto)}\n${fechaHora(g.fecha_hora)}\n\n" +
+                    "El dinero volverá a tu fondo. ¿Continuar?")
+            .setPositiveButton("Anular") { _, _ ->
+                lifecycleScope.launch {
+                    try {
+                        val r = ApiClient.api.anularGasto(g.id_gasto)
+                        if (r.isSuccessful) { toast("Compra anulada"); cargar() }
+                        else toast(errorDeApi(r))
+                    } catch (e: Exception) {
+                        toast("No se pudo conectar con el servidor.\n${e.message}")
+                    }
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
     private fun elegirFecha() {
         DatePickerDialog(this,
             { _, y, m, d ->
@@ -132,7 +199,8 @@ class FondoRanchoActivity : AppCompatActivity() {
 
     private fun pintar(f: FondoRancho) {
         b.tvFondo.text = money(f.fondo_rancho)
-        b.tvFondoDetalle.text = "Acumulado confirmado del tesorero"
+        b.tvFondoDetalle.text = "Recibido ${money(f.recibido_total)} · " +
+                "gastado ${money(f.gastado_total)} en ${f.compras_total} compra(s)"
         b.tvSaldoComensal.text = money(f.saldo_comensal)
 
         // Aviso de entregas que el tesorero ya registró pero nadie confirmó.
@@ -145,11 +213,13 @@ class FondoRanchoActivity : AppCompatActivity() {
             b.tvPorConfirmar.visibility = View.GONE
         }
 
-        b.tvTituloPeriodo.text = "Confirmado · día ${f.fecha} y ${f.mes_nombre} ${f.anio}"
+        b.tvTituloPeriodo.text = "Movimiento · día ${f.fecha} y ${f.mes_nombre} ${f.anio}"
         b.contenedorPeriodo.removeAllViews()
-        fila(b.contenedorPeriodo, "Confirmado el día (${f.entregas_dia})", money(f.recibido_dia))
-        fila(b.contenedorPeriodo, "Confirmado en el mes (${f.entregas_mes})", money(f.recibido_mes))
-        fila(b.contenedorPeriodo, "Fondo acumulado", money(f.fondo_rancho))
+        fila(b.contenedorPeriodo, "Recibido el día (${f.entregas_dia})", money(f.recibido_dia))
+        fila(b.contenedorPeriodo, "Gastado el día (${f.compras_dia})", money(f.gastado_dia))
+        fila(b.contenedorPeriodo, "Recibido en el mes (${f.entregas_mes})", money(f.recibido_mes))
+        fila(b.contenedorPeriodo, "Gastado en el mes (${f.compras_mes})", money(f.gastado_mes))
+        fila(b.contenedorPeriodo, "Fondo disponible", money(f.fondo_rancho))
         fila(b.contenedorPeriodo, "Por confirmar", money(f.por_confirmar))
 
         b.contenedorMovimientos.removeAllViews()
@@ -171,6 +241,44 @@ class FondoRanchoActivity : AppCompatActivity() {
                     "Entregada ${fechaHora(m.fecha_hora)}\n$estado",
                     money(m.monto),
                     resaltar = m.estado != "CONFIRMADA")
+            }
+        }
+
+        // Compras hechas con el fondo. Se pueden tocar para anularlas.
+        b.contenedorGastos.removeAllViews()
+        if (f.gastos.isEmpty()) {
+            b.contenedorGastos.addView(TextView(this).apply {
+                text = "Todavía no registras compras."
+                textSize = 14f
+                setPadding(16, 24, 16, 24)
+                setTextColor(getColor(com.brigada.confronta.R.color.texto_secundario))
+            })
+        } else {
+            for (g in f.gastos) {
+                val f2 = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(16, 22, 16, 22)
+                    gravity = Gravity.CENTER_VERTICAL
+                    isClickable = true
+                    setBackgroundResource(android.R.drawable.list_selector_background)
+                    setOnClickListener { anularGasto(g) }
+                }
+                f2.addView(TextView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    text = "${g.categoria}\n${g.detalle ?: "Sin detalle"}\n${fechaHora(g.fecha_hora)}"
+                    textSize = 14f
+                })
+                f2.addView(TextView(this).apply {
+                    text = "− " + money(g.monto)
+                    textSize = 15f
+                    gravity = Gravity.END
+                    setTextColor(getColor(com.brigada.confronta.R.color.rojo_novedad))
+                })
+                b.contenedorGastos.addView(f2)
+                b.contenedorGastos.addView(View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+                    setBackgroundColor(0xFFE0E0E0.toInt())
+                })
             }
         }
     }

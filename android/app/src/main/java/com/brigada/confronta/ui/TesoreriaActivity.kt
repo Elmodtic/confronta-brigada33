@@ -102,9 +102,14 @@ class TesoreriaActivity : AppCompatActivity() {
 
     private fun pintar(t: TesoreriaResumen) {
         b.tvCaja.text = money(t.acumulado.caja)
-        b.tvAcumulado.text = "Recaudado ${money(t.acumulado.recaudado)} · " +
-                "Confirmado ${money(t.acumulado.transferido)} · " +
-                "En tránsito ${money(t.acumulado.en_transito)} (${t.acumulado.pendientes})"
+        // La caja es el dinero real; lo pendiente todavía no la descuenta,
+        // pero sí reduce lo que aún puede comprometer en una entrega nueva.
+        b.tvAcumulado.text = if (t.acumulado.pendientes > 0)
+            "Recaudado ${money(t.acumulado.recaudado)} · entregado ${money(t.acumulado.transferido)}\n" +
+            "Sin confirmar: ${money(t.acumulado.en_transito)} (${t.acumulado.pendientes}) · " +
+            "puedes entregar ${money(t.acumulado.disponible)}"
+        else
+            "Recaudado ${money(t.acumulado.recaudado)} · entregado ${money(t.acumulado.transferido)}"
 
         b.tvTituloDia.text = "Movimiento del día ${t.fecha}"
         b.contenedorDia.removeAllViews()
@@ -121,8 +126,11 @@ class TesoreriaActivity : AppCompatActivity() {
                 textoVacio("No hay rancheros activos. Pide al administrador que asigne el rol."))
         } else {
             for (r in rancheros) {
+                // Se muestra cuánto recibió, cuánto lleva gastado en víveres
+                // y qué le queda; el saldo grande es el fondo disponible.
                 item(b.contenedorRancheros,
-                    "${r.persona}\nFondo confirmado · en tránsito ${money(r.en_transito)}",
+                    "${r.persona}\nRecibió ${money(r.recibido)} · gastó ${money(r.gastado)}" +
+                    if (r.en_transito > 0) "\nSin confirmar: ${money(r.en_transito)}" else "",
                     money(r.fondo_rancho))
             }
         }
