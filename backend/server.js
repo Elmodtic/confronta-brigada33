@@ -277,6 +277,22 @@ function faltaInscribirTotp(rol, totpActivado) {
   return rol !== 'ADMIN' && !totpActivado;
 }
 
+// Horas que sirve la contraseña temporal que pone el administrador.
+const HORAS_PASSWORD_TEMPORAL = 24;
+
+/**
+ * ¿La contraseña temporal del reinicio ya venció?
+ *
+ * La temporal es la propia cédula, que es un dato público: cualquiera
+ * podría probar cédula/cédula en una cuenta recién reiniciada. Acotarla
+ * en el tiempo deja esa ventana en horas en vez de para siempre.
+ */
+function temporalVencida(usuario, ahora) {
+  return !!usuario.debe_cambiar_password
+      && !!usuario.password_temporal_hasta
+      && new Date(usuario.password_temporal_hasta) < ahora;
+}
+
 /**
  * El estado del segundo factor viaja dentro del token para no consultar la
  * base en cada petición. Como el token dura 15 minutos, al activarlo se
@@ -290,6 +306,7 @@ function firmarSesion(usuario) {
       rol: usuario.rol,
       id_personal: usuario.id_personal || null,
       totp: !!usuario.totp_activado,
+      cambiar: !!usuario.debe_cambiar_password,
     },
     process.env.JWT_SECRET,
     { expiresIn: '15m', jwtid: crypto.randomUUID() });
@@ -315,6 +332,7 @@ async function emitirSesion(usuario, res, detalleAuditoria) {
     apellidos: usuario.apellidos || null,
     totp_activado: !!usuario.totp_activado,
     totp_obligatorio: faltaInscribirTotp(usuario.rol, usuario.totp_activado),
+    debe_cambiar_password: !!usuario.debe_cambiar_password,
   });
 }
 
@@ -336,6 +354,12 @@ app.post('/api/login', limitadorAuth, async (req, res) => {
 
     const ok = await bcrypt.compare(password, usuario.password_hash);
     if (!ok) return fallarIntento(usuario, ahora, res, 'Credenciales inválidas.');
+
+    if (temporalVencida(usuario, ahora)) {
+      return res.status(423).json({
+        error: 'La contraseña temporal caducó. Pídele al administrador que la reinicie otra vez.',
+      });
+    }
 
     // Con segundo factor activo la contraseña sola no abre sesión: se
     // entrega un token parcial que únicamente sirve para el paso del
@@ -360,7 +384,7 @@ app.post('/api/login', limitadorAuth, async (req, res) => {
   }
 });
 
-// --- Segundo paso: código de la app de autenticación o de respaldo ---
+// --- Segundo paso: el código de la app de autenticación ---
 app.post('/api/login/totp', limitadorAuth, async (req, res) => {
   const { token_parcial, codigo } = req.body;
   if (!token_parcial || !codigo)
@@ -385,16 +409,6 @@ app.post('/api/login/totp', limitadorAuth, async (req, res) => {
     if (bloqueo)
       return res.status(423).json({ error: `Cuenta bloqueada. Intenta de nuevo en ${bloqueo} min.`, reiniciar: true });
 
-    // Un código de respaldo se reconoce por su forma (XXXX-XXXX) y se
-    // consume; si no lo es, se valida como código de seis dígitos.
-    if (totp.pareceCodigoRespaldo(codigo)) {
-      const usado = await consumirCodigoRespaldo(usuario.id_usuario, codigo);
-      if (!usado) return fallarIntento(usuario, ahora, res, 'Código de respaldo inválido o ya usado.');
-      await auditar(usuario.id_usuario, 'TOTP_RESPALDO',
-        `${usuario.username} entró con un código de respaldo`);
-      return emitirSesion(usuario, res, `Ingreso de ${usuario.username} (código de respaldo)`);
-    }
-
     const r = await totp.verificarCodigo(usuario.totp_secreto, codigo, usuario.totp_ultimo_paso);
     if (!r.valido) return fallarIntento(usuario, ahora, res, 'Código incorrecto.');
 
@@ -416,6 +430,48 @@ app.post('/api/logout', verificarToken, async (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Cambiar la propia contraseña (obligatorio tras un reinicio) ---
+app.post('/api/mi/password', verificarToken, async (req, res) => {
+  const actual = String(req.body.password_actual || '');
+  const nueva = String(req.body.nueva_password || '');
+
+  const err = validarPassword(nueva);
+  if (err) return res.status(400).json({ error: err });
+
+  try {
+    const [[u]] = await pool.query(
+      'SELECT username, password_hash, rol, id_personal, totp_activado FROM usuario WHERE id_usuario = ?',
+      [req.usuario.id_usuario]);
+    if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const ok = await bcrypt.compare(actual, u.password_hash);
+    if (!ok) return res.status(401).json({ error: 'La contraseña actual no coincide' });
+
+    // Con la temporal puesta por el admin, repetir la cédula dejaría la
+    // cuenta igual de expuesta que antes de cambiarla.
+    if (await bcrypt.compare(nueva, u.password_hash))
+      return res.status(400).json({ error: 'La contraseña nueva debe ser distinta de la actual' });
+
+    await pool.query(
+      `UPDATE usuario SET password_hash = ?, debe_cambiar_password = 0,
+              password_temporal_hasta = NULL
+       WHERE id_usuario = ?`,
+      [await bcrypt.hash(nueva, 10), req.usuario.id_usuario]);
+
+    await auditar(req.usuario.id_usuario, 'CAMBIO_PASSWORD', `${u.username} cambió su contraseña`);
+    res.json({
+      ok: true,
+      // Sin token nuevo la sesión seguiría marcada como "debe cambiar" y
+      // quedaría bloqueada hasta que caduque.
+      token: firmarSesion({ ...u, id_usuario: req.usuario.id_usuario, debe_cambiar_password: 0 }),
+      totp_obligatorio: faltaInscribirTotp(u.rol, u.totp_activado),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al cambiar la contraseña' });
+  }
+});
+
 // ===============================================================
 // VERIFICACIÓN EN DOS PASOS (TOTP)
 //
@@ -425,47 +481,15 @@ app.post('/api/logout', verificarToken, async (req, res) => {
 // sí mismo por haber guardado mal el secreto.
 // ===============================================================
 
-// Marca como usado el código de respaldo si coincide con alguno vigente.
-// Se comparan todos porque están hasheados y no se pueden buscar.
-async function consumirCodigoRespaldo(idUsuario, codigo) {
-  const limpio = totp.normalizarRespaldo(codigo);
-  const [filas] = await pool.query(
-    'SELECT id_codigo, codigo_hash FROM codigo_respaldo WHERE id_usuario = ? AND usado_en IS NULL',
-    [idUsuario]);
-  for (const f of filas) {
-    if (await bcrypt.compare(limpio, f.codigo_hash)) {
-      const [r] = await pool.query(
-        'UPDATE codigo_respaldo SET usado_en = NOW() WHERE id_codigo = ? AND usado_en IS NULL',
-        [f.id_codigo]);
-      // Si otra petición lo consumió primero, affectedRows llega en 0.
-      return r.affectedRows === 1;
-    }
-  }
-  return false;
-}
-
-async function reemplazarCodigosRespaldo(idUsuario) {
-  const { codigos, hashes } = await totp.generarCodigosRespaldo();
-  await pool.query('DELETE FROM codigo_respaldo WHERE id_usuario = ?', [idUsuario]);
-  await pool.query(
-    'INSERT INTO codigo_respaldo (id_usuario, codigo_hash) VALUES ?',
-    [hashes.map((h) => [idUsuario, h])]);
-  return codigos;
-}
-
 // --- Estado del segundo factor de la cuenta ---
 app.get('/api/mi/totp', verificarToken, async (req, res) => {
   try {
     const [[u]] = await pool.query(
       'SELECT totp_activado, totp_activado_en FROM usuario WHERE id_usuario = ?',
       [req.usuario.id_usuario]);
-    const [[c]] = await pool.query(
-      'SELECT COUNT(*) AS n FROM codigo_respaldo WHERE id_usuario = ? AND usado_en IS NULL',
-      [req.usuario.id_usuario]);
     res.json({
       activado: !!u.totp_activado,
       activado_en: u.totp_activado_en,
-      codigos_respaldo_disponibles: Number(c.n),
     });
   } catch (e) {
     console.error(e);
@@ -515,48 +539,19 @@ app.post('/api/mi/totp/activar', verificarToken, async (req, res) => {
     await pool.query(
       'UPDATE usuario SET totp_activado = 1, totp_activado_en = NOW(), totp_ultimo_paso = ? WHERE id_usuario = ?',
       [r.paso, req.usuario.id_usuario]);
-    const codigos = await reemplazarCodigosRespaldo(req.usuario.id_usuario);
-
     await auditar(req.usuario.id_usuario, 'TOTP_ACTIVAR',
       `${req.usuario.username} activó la verificación en dos pasos`);
     res.json({
       ok: true,
-      codigos_respaldo: codigos,
       // El token que trae el usuario todavía dice que no tiene segundo
       // factor y lo dejaría bloqueado hasta que caduque. Se le entrega uno
       // nuevo para que siga trabajando sin volver a iniciar sesión.
       token: firmarSesion({ ...req.usuario, totp_activado: 1 }),
-      mensaje: 'Guarda estos códigos. Son la única forma de entrar si pierdes el teléfono.',
+      mensaje: 'Verificación en dos pasos activada.',
     });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error al activar la verificación' });
-  }
-});
-
-// --- Nuevos códigos de respaldo (invalida los anteriores) ---
-app.post('/api/mi/totp/respaldo', verificarToken, async (req, res) => {
-  try {
-    const [[u]] = await pool.query(
-      'SELECT totp_secreto, totp_activado, totp_ultimo_paso FROM usuario WHERE id_usuario = ?',
-      [req.usuario.id_usuario]);
-    if (!u.totp_activado)
-      return res.status(400).json({ error: 'No tienes la verificación en dos pasos activa' });
-
-    // Se exige un código vigente: si alguien deja el teléfono abierto,
-    // que al menos no pueda llevarse códigos de respaldo nuevos.
-    const r = await totp.verificarCodigo(u.totp_secreto, req.body.codigo, u.totp_ultimo_paso);
-    if (!r.valido) return res.status(401).json({ error: 'Código incorrecto' });
-    await pool.query('UPDATE usuario SET totp_ultimo_paso = ? WHERE id_usuario = ?',
-      [r.paso, req.usuario.id_usuario]);
-
-    const codigos = await reemplazarCodigosRespaldo(req.usuario.id_usuario);
-    await auditar(req.usuario.id_usuario, 'TOTP_RESPALDO_NUEVO',
-      `${req.usuario.username} regeneró sus códigos de respaldo`);
-    res.json({ ok: true, codigos_respaldo: codigos });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error al generar los códigos' });
   }
 });
 
@@ -586,8 +581,6 @@ app.post('/api/mi/totp/desactivar', verificarToken, async (req, res) => {
       `UPDATE usuario SET totp_secreto = NULL, totp_activado = 0,
               totp_activado_en = NULL, totp_ultimo_paso = NULL
        WHERE id_usuario = ?`, [req.usuario.id_usuario]);
-    await pool.query('DELETE FROM codigo_respaldo WHERE id_usuario = ?', [req.usuario.id_usuario]);
-
     await auditar(req.usuario.id_usuario, 'TOTP_DESACTIVAR',
       `${u.username} desactivó la verificación en dos pasos`);
     res.json({ ok: true, mensaje: 'Verificación en dos pasos desactivada.' });
@@ -597,7 +590,58 @@ app.post('/api/mi/totp/desactivar', verificarToken, async (req, res) => {
   }
 });
 
-// --- El ADMIN la quita a quien perdió el teléfono y los códigos ---
+/**
+ * Reinicio de cuenta por el administrador.
+ *
+ * Es la salida para quien perdió el teléfono: sin códigos de respaldo, la
+ * recuperación pasa por la cadena de mando. Deja la contraseña en la
+ * propia cédula y apaga el segundo factor, de modo que el usuario entre
+ * una vez, ponga contraseña nueva y vuelva a inscribir su OTP.
+ *
+ * La cédula como contraseña es deliberadamente temporal: vale 24 horas y
+ * la cuenta no puede hacer nada hasta cambiarla.
+ */
+app.post('/api/usuarios/:id/reiniciar', verificarToken, soloRol('ADMIN'), async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const [[u]] = await pool.query(`
+      SELECT us.username, us.rol, p.cedula
+      FROM usuario us LEFT JOIN personal p ON us.id_personal = p.id_personal
+      WHERE us.id_usuario = ?`, [id]);
+    if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (u.rol === 'ADMIN')
+      return res.status(400).json({ error: 'La cuenta de administrador no se reinicia desde aquí' });
+
+    // El username ES la cédula; la ficha es el respaldo por si faltara.
+    const temporal = u.cedula || u.username;
+    const hasta = new Date(Date.now() + HORAS_PASSWORD_TEMPORAL * 3600 * 1000);
+
+    await pool.query(
+      `UPDATE usuario
+          SET password_hash = ?, debe_cambiar_password = 1, password_temporal_hasta = ?,
+              totp_secreto = NULL, totp_activado = 0, totp_activado_en = NULL,
+              totp_ultimo_paso = NULL, intentos_fallidos = 0, bloqueado_hasta = NULL
+        WHERE id_usuario = ?`,
+      [await bcrypt.hash(temporal, 10), hasta, id]);
+
+    await auditar(req.usuario.id_usuario, 'REINICIO_CUENTA',
+      `Reinició la cuenta de ${u.username}: contraseña temporal y segundo factor borrado`);
+
+    res.json({
+      ok: true,
+      username: u.username,
+      password_temporal: temporal,
+      horas_validez: HORAS_PASSWORD_TEMPORAL,
+      mensaje: `${u.username} entra con su cédula como contraseña. Al ingresar tendrá que ` +
+               `cambiarla y volver a inscribir su verificación en dos pasos.`,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al reiniciar la cuenta' });
+  }
+});
+
+// --- El ADMIN quita solo el segundo factor, sin tocar la contraseña ---
 app.post('/api/usuarios/:id/totp/reset', verificarToken, soloRol('ADMIN'), async (req, res) => {
   const id = Number(req.params.id);
   try {
@@ -608,8 +652,6 @@ app.post('/api/usuarios/:id/totp/reset', verificarToken, soloRol('ADMIN'), async
       `UPDATE usuario SET totp_secreto = NULL, totp_activado = 0,
               totp_activado_en = NULL, totp_ultimo_paso = NULL
        WHERE id_usuario = ?`, [id]);
-    await pool.query('DELETE FROM codigo_respaldo WHERE id_usuario = ?', [id]);
-
     await auditar(req.usuario.id_usuario, 'TOTP_RESET',
       `Quitó la verificación en dos pasos a ${u.username}`);
     res.json({ ok: true, mensaje: `${u.username} vuelve a entrar solo con contraseña. Pídele que la active de nuevo.` });
@@ -720,8 +762,13 @@ app.post('/api/olvido/reset', limitadorAuth, async (req, res) => {
     const ok = await bcrypt.compare(normalizarRespuesta(respuesta_seguridad), rows[0].respuesta_hash);
     if (!ok) return res.status(401).json({ error: 'Respuesta de seguridad incorrecta' });
 
+    // Ojo: esto NO toca el segundo factor. La pregunta de seguridad es
+    // para quien olvidó la contraseña pero conserva su teléfono; si además
+    // apagara el OTP, bastaría con adivinar la respuesta para quedarse con
+    // la cuenta entera. Quien perdió el teléfono va donde el administrador.
     const passHash = await bcrypt.hash(nueva_password, 10);
-    await pool.query('UPDATE usuario SET password_hash = ? WHERE id_usuario = ?',
+    await pool.query(
+      'UPDATE usuario SET password_hash = ?, debe_cambiar_password = 0, password_temporal_hasta = NULL WHERE id_usuario = ?',
       [passHash, rows[0].id_usuario]);
     await auditar(rows[0].id_usuario, 'RESET_PASSWORD', `Cambio de clave de ${username}`);
     res.json({ ok: true });
@@ -1302,7 +1349,7 @@ app.get('/api/usuarios', verificarToken, soloRol('ADMIN'), async (req, res) => {
 
   const [rows] = await pool.query(`
     SELECT us.id_usuario, us.username, us.rol, us.activo, us.saldo,
-           us.totp_activado,
+           us.totp_activado, us.debe_cambiar_password,
            p.cedula, p.nombres, p.apellidos,
            g.abreviatura AS grado, u.siglas AS unidad
     FROM usuario us
@@ -1322,6 +1369,7 @@ app.get('/api/usuarios', verificarToken, soloRol('ADMIN'), async (req, res) => {
     usuarios: rows.map((r) => ({
       ...r, activo: !!r.activo, saldo: Number(r.saldo || 0),
       totp_activado: !!r.totp_activado,
+      debe_cambiar_password: !!r.debe_cambiar_password,
     })),
   });
 });

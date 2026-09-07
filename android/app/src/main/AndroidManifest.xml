@@ -40,6 +40,17 @@
         <activity android:name=".ui.TesoreriaActivity" android:exported="false" />
         <activity android:name=".ui.FondoRanchoActivity" android:exported="false" />
         <activity android:name=".ui.SeguridadActivity" android:exported="false" />
+        <activity android:name=".ui.CambiarPasswordActivity" android:exported="false" />
+
+        <!-- El escaner se fija en vertical: la pantalla de la libreria sigue
+             el sensor y gira el telefono a media lectura. -->
+        <activity
+            android:name=".ui.EscanerVertical"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:stateNotNeeded="true"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            android:windowSoftInputMode="stateAlwaysHidden" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

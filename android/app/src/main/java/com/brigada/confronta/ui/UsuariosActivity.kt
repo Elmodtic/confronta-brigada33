@@ -136,6 +136,7 @@ class UsuariosActivity : AppCompatActivity() {
                 listOfNotNull(
                     nombre.ifBlank { null },
                     if (u.totp_activado) "🔐 Verificación en dos pasos: activa" else null,
+                    if (u.debe_cambiar_password) "⏳ Con contraseña temporal sin cambiar" else null,
                 ).joinToString("\n").ifBlank { null })
             .setView(db.root)
             .setPositiveButton("Guardar") { _, _ ->
@@ -146,43 +147,58 @@ class UsuariosActivity : AppCompatActivity() {
             }
             .setNegativeButton("Cancelar", null)
 
-        // Solo aparece si hace falta: quitarle el segundo factor a quien no
-        // lo tiene no significa nada.
-        if (u.totp_activado) dialogo.setNeutralButton("Quitar 2 pasos", null)
+        // El reinicio es la salida para quien perdió el teléfono; al ADMIN
+        // no se le ofrece porque su cuenta es la que rescata a las demás.
+        if (u.rol != "ADMIN") dialogo.setNeutralButton("Reiniciar cuenta", null)
 
         dialogo.create().apply {
             setOnShowListener {
-                getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener { confirmarResetTotp(u) }
+                getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener { confirmarReinicio(u) }
             }
             show()
         }
     }
 
     /**
-     * Salida de emergencia para quien perdió el teléfono Y sus códigos de
-     * respaldo. Deja la cuenta entrando solo con contraseña, así que se
-     * confirma aparte y queda en la auditoría.
+     * Reinicio de cuenta: la salida para quien perdió el teléfono.
+     *
+     * Deja la cédula como contraseña temporal y borra el segundo factor,
+     * de modo que la persona entre una vez, ponga contraseña nueva y
+     * vuelva a inscribir su OTP. Se confirma aparte y queda en auditoría
+     * porque, mientras dura, la cuenta es adivinable.
      */
-    private fun confirmarResetTotp(u: UsuarioAdmin) {
+    private fun confirmarReinicio(u: UsuarioAdmin) {
+        val nombre = listOfNotNull(u.nombres, u.apellidos).joinToString(" ").ifBlank { u.username }
         AlertDialog.Builder(this)
-            .setTitle("Quitar la verificación en dos pasos")
+            .setTitle("Reiniciar la cuenta de $nombre")
             .setMessage(
-                "${u.username} volverá a entrar solo con su contraseña.\n\n" +
-                "Hazlo únicamente si confirmaste que es esa persona y que perdió " +
-                "el acceso a su app de autenticación. Pídele que la active de nuevo.")
-            .setPositiveButton("Quitar") { _, _ -> resetTotp(u) }
+                "Su contraseña pasará a ser su propia cédula (${u.username}) y se borrará " +
+                "su verificación en dos pasos.\n\n" +
+                "Al entrar tendrá que cambiar la contraseña y volver a inscribir su código.\n\n" +
+                "Hazlo solo si confirmaste en persona que perdió el acceso. La temporal " +
+                "vence en 24 horas.")
+            .setPositiveButton("Reiniciar") { _, _ -> reiniciar(u) }
             .setNegativeButton("Cancelar", null)
             .show()
     }
 
-    private fun resetTotp(u: UsuarioAdmin) {
+    private fun reiniciar(u: UsuarioAdmin) {
         b.progreso.visibility = View.VISIBLE
         lifecycleScope.launch {
             try {
-                val r = ApiClient.api.totpReset(u.id_usuario)
-                if (r.isSuccessful) {
-                    toast("Se quitó la verificación en dos pasos a ${u.username}")
-                    buscar()
+                val r = ApiClient.api.reiniciarCuenta(u.id_usuario)
+                if (r.isSuccessful && r.body() != null) {
+                    val x = r.body()!!
+                    AlertDialog.Builder(this@UsuariosActivity)
+                        .setTitle("Cuenta reiniciada")
+                        .setMessage(
+                            "Usuario: ${x.username}\n" +
+                            "Contraseña temporal: ${x.password_temporal}\n" +
+                            "Válida por ${x.horas_validez} horas.\n\n" +
+                            "Dile que entre con esos datos: la app le pedirá cambiar la " +
+                            "contraseña y volver a inscribir su verificación en dos pasos.")
+                        .setPositiveButton("Listo") { _, _ -> buscar() }
+                        .show()
                 } else toast(errorDeApi(r))
             } catch (e: Exception) {
                 toast("No se pudo conectar con el servidor.\n${e.message}")

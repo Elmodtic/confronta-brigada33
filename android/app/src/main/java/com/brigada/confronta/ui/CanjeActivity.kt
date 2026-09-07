@@ -36,7 +36,10 @@ class CanjeActivity : AppCompatActivity() {
         val opciones = ScanOptions()
             .setPrompt("Apunta al QR del comensal")
             .setBeepEnabled(true)
-            .setOrientationLocked(false)
+            // Bloqueado en vertical: girar el telefono a media lectura
+            // estorba cuando se sostiene con una mano.
+            .setOrientationLocked(true)
+            .setCaptureActivity(EscanerVertical::class.java)
             .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
         scanLauncher.launch(opciones)
     }

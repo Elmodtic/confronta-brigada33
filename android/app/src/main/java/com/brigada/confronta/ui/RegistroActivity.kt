@@ -135,8 +135,17 @@ class RegistroActivity : AppCompatActivity() {
             try {
                 val resp = ApiClient.api.login(LoginReq(usuario, pass))
                 if (resp.isSuccessful && resp.body() != null) {
-                    Sesion.guardar(resp.body()!!)
-                    startActivity(Intent(this@RegistroActivity, MenuActivity::class.java))
+                    val r = resp.body()!!
+                    Sesion.guardar(r)
+                    // Una cuenta recién creada todavía no tiene segundo
+                    // factor, y sin él el menú no sirve para nada: se va
+                    // directo a inscribirlo.
+                    val destino = if (r.totp_obligatorio)
+                        Intent(this@RegistroActivity, SeguridadActivity::class.java)
+                            .putExtra(SeguridadActivity.EXTRA_OBLIGATORIO, true)
+                    else
+                        Intent(this@RegistroActivity, MenuActivity::class.java)
+                    startActivity(destino)
                     finishAffinity()
                 } else {
                     toast("Cuenta creada. Ahora inicia sesión.")

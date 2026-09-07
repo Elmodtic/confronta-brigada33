@@ -22,6 +22,8 @@ data class LoginResp(
     // El servidor exige el segundo factor a todos menos al ADMIN: mientras
     // no lo active, la sesion solo sirve para inscribirse.
     val totp_obligatorio: Boolean = false,
+    // Entro con la contrasena temporal que puso el administrador.
+    val debe_cambiar_password: Boolean = false,
     val requiere_totp: Boolean = false,
     val token_parcial: String? = null,
     val mensaje: String? = null
@@ -32,8 +34,7 @@ data class LoginTotpReq(val token_parcial: String, val codigo: String)
 
 data class TotpEstado(
     val activado: Boolean,
-    val activado_en: String?,
-    val codigos_respaldo_disponibles: Int
+    val activado_en: String?
 )
 
 /** `uri` es el otpauth:// que se pinta como QR; `secreto` es el respaldo manual. */
@@ -43,13 +44,30 @@ data class TotpCodigoReq(val codigo: String)
 
 data class TotpDesactivarReq(val password: String, val codigo: String)
 
-data class TotpRespaldoResp(
+/** Al activar, el servidor devuelve una sesion nueva que ya reconoce el
+ *  segundo factor; sin ella la app quedaria bloqueada 15 minutos. */
+data class TotpActivarResp(
     val ok: Boolean,
-    val codigos_respaldo: List<String>?,
     val mensaje: String?,
-    // Al activar, el servidor devuelve una sesion nueva que ya reconoce el
-    // segundo factor; sin ella habria que volver a iniciar sesion.
     val token: String? = null
+)
+
+// ---- Cambio de contrasena ----
+data class CambiarPasswordReq(val password_actual: String, val nueva_password: String)
+
+data class CambiarPasswordResp(
+    val ok: Boolean,
+    val token: String?,
+    val totp_obligatorio: Boolean = false
+)
+
+/** Lo que devuelve el reinicio de cuenta que hace el administrador. */
+data class ReinicioResp(
+    val ok: Boolean,
+    val username: String?,
+    val password_temporal: String?,
+    val horas_validez: Int = 24,
+    val mensaje: String?
 )
 
 data class Kpis(
@@ -201,7 +219,8 @@ data class UsuarioAdmin(
     val unidad: String?,
     val cedula: String? = null,
     val saldo: Double = 0.0,
-    val totp_activado: Boolean = false
+    val totp_activado: Boolean = false,
+    val debe_cambiar_password: Boolean = false
 )
 
 data class UpdateUsuarioReq(val rol: String? = null, val activo: Boolean? = null)

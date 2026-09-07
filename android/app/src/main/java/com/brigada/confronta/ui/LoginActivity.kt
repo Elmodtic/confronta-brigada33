@@ -179,15 +179,20 @@ class LoginActivity : AppCompatActivity() {
             CredencialesSeguras.guardar(this@LoginActivity, usuario, pass)
         }
         toast("Bienvenido, ${Sesion.nombre ?: usuario}")
-        // El servidor exige el segundo factor a todos menos al ADMIN. Sin
-        // inscribirse, la sesión no sirve para nada más, así que se lleva
-        // directo a la inscripción en vez de a un menú que fallaría entero.
-        if (r.totp_obligatorio) {
-            startActivity(Intent(this, SeguridadActivity::class.java)
-                .putExtra(SeguridadActivity.EXTRA_OBLIGATORIO, true))
-            finish()
-        } else {
-            irAlMenu()
+        // Con pasos pendientes la sesión no sirve para nada más, así que se
+        // lleva directo a resolverlos en vez de a un menú que fallaría
+        // entero. Primero la contraseña temporal, después el segundo factor.
+        when {
+            r.debe_cambiar_password -> {
+                startActivity(Intent(this, CambiarPasswordActivity::class.java))
+                finish()
+            }
+            r.totp_obligatorio -> {
+                startActivity(Intent(this, SeguridadActivity::class.java)
+                    .putExtra(SeguridadActivity.EXTRA_OBLIGATORIO, true))
+                finish()
+            }
+            else -> irAlMenu()
         }
     }
 

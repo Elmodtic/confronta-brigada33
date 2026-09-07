@@ -4,11 +4,9 @@
 // y desde ahí el ingreso pide contraseña MÁS un código de seis dígitos
 // que cambia cada 30 segundos.
 //
-// Este archivo concentra lo criptográfico: cifrado del secreto, la
-// verificación del código y los códigos de respaldo. Los endpoints
-// viven en server.js.
+// Este archivo concentra lo criptográfico: el cifrado del secreto y la
+// verificación del código. Los endpoints viven en server.js.
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 const otp = require('otplib');
 require('dotenv').config();
 
@@ -86,39 +84,6 @@ async function verificarCodigo(secretoCifrado, codigo, ultimoPaso) {
   return { valido: !!r.valid, paso: r.timeStep };
 }
 
-// --- Códigos de respaldo ----------------------------------------------
-// Si el usuario pierde el teléfono, estos son su única forma de entrar
-// sin molestar al administrador. Son de un solo uso y se guardan
-// hasheados, igual que las contraseñas.
-const CANTIDAD_RESPALDO = 10;
-
-// Formato XXXX-XXXX sin caracteres ambiguos (0/O, 1/I) para que se
-// puedan copiar a mano de un papel sin equivocarse.
-const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-
-function nuevoCodigoRespaldo() {
-  const bytes = crypto.randomBytes(8);
-  const letras = [...bytes].map((b) => ALFABETO[b % ALFABETO.length]).join('');
-  return `${letras.slice(0, 4)}-${letras.slice(4)}`;
-}
-
-// Devuelve { codigos, hashes }: los primeros se le muestran al usuario
-// UNA sola vez y los segundos son los que se guardan.
-async function generarCodigosRespaldo() {
-  const codigos = Array.from({ length: CANTIDAD_RESPALDO }, nuevoCodigoRespaldo);
-  const hashes = await Promise.all(codigos.map((c) => bcrypt.hash(c, 10)));
-  return { codigos, hashes };
-}
-
-function pareceCodigoRespaldo(valor) {
-  return /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i.test(String(valor || '').trim());
-}
-
-function normalizarRespaldo(valor) {
-  const limpio = String(valor || '').trim().toUpperCase().replace(/-/g, '');
-  return `${limpio.slice(0, 4)}-${limpio.slice(4, 8)}`;
-}
-
 module.exports = {
   comprobarConfiguracion,
   cifrar,
@@ -126,8 +91,4 @@ module.exports = {
   nuevoSecreto,
   uriDeInscripcion,
   verificarCodigo,
-  generarCodigosRespaldo,
-  pareceCodigoRespaldo,
-  normalizarRespaldo,
-  CANTIDAD_RESPALDO,
 };

@@ -46,6 +46,17 @@ function verificarToken(req, res, next) {
       return res.status(401).json({ error: 'Falta completar la verificación en dos pasos' });
     }
 
+    // Quien entró con la contraseña temporal del administrador tiene que
+    // cambiarla antes que nada. Va primero que el segundo factor: no
+    // tiene sentido inscribir un OTP en una cuenta cuya contraseña es la
+    // cédula, un dato que conoce media unidad.
+    if (usuario.cambiar && !RUTAS_SIN_CAMBIO_DE_CLAVE.has(req.path)) {
+      return res.status(403).json({
+        error: 'Debes cambiar tu contraseña temporal antes de continuar.',
+        requiere_cambio_password: true,
+      });
+    }
+
     // La inscripción en dos pasos es obligatoria salvo para el ADMIN. Se
     // exige aquí, en el único punto por el que pasan TODAS las rutas
     // protegidas, y no en cada una: una ruta nueva queda cubierta sola.
@@ -71,6 +82,17 @@ const RUTAS_SIN_SEGUNDO_FACTOR = new Set([
   '/api/mi/totp',
   '/api/mi/totp/iniciar',
   '/api/mi/totp/activar',
+  // Tras un reinicio la cuenta llega sin OTP y con contraseña temporal:
+  // si el segundo factor bloqueara también el cambio de contraseña, no
+  // habría forma de salir de ese estado.
+  '/api/mi/password',
+]);
+
+// Con contraseña temporal, lo único permitido es cambiarla o salir.
+const RUTAS_SIN_CAMBIO_DE_CLAVE = new Set([
+  '/api/logout',
+  '/api/mi/perfil',
+  '/api/mi/password',
 ]);
 
 // Restringe una ruta a ciertos roles, ej: soloRol('ADMIN')

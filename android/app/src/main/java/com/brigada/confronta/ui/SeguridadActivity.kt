@@ -55,7 +55,6 @@ class SeguridadActivity : AppCompatActivity() {
 
         b.btnEmpezar.setOnClickListener { iniciarInscripcion() }
         b.btnActivar.setOnClickListener { activar() }
-        b.btnNuevosRespaldos.setOnClickListener { pedirCodigoY(::regenerarRespaldos) }
         b.btnDesactivar.setOnClickListener { desactivar() }
 
         consultarEstado()
@@ -85,11 +84,10 @@ class SeguridadActivity : AppCompatActivity() {
                         b.tvEstado.text = "✅  Activada"
                         b.tvDetalle.text =
                             "Activada el ${fechaHora(e.activado_en)}\n" +
-                            "Te quedan ${e.codigos_respaldo_disponibles} códigos de respaldo."
+                            "Si pierdes el teléfono, pide al administrador que reinicie tu cuenta."
                         b.btnEmpezar.visibility = View.GONE
                         b.panelInscripcion.visibility = View.GONE
                         b.tvObligatorio.visibility = View.GONE
-                        b.btnNuevosRespaldos.visibility = View.VISIBLE
                         // Solo el ADMIN puede apagarlo: para el resto es
                         // obligatorio y el servidor rechaza el intento.
                         b.btnDesactivar.visibility =
@@ -98,7 +96,6 @@ class SeguridadActivity : AppCompatActivity() {
                         b.tvEstado.text = "⚠️  Desactivada"
                         b.tvDetalle.text = "Tu cuenta entra solo con la contraseña."
                         b.btnEmpezar.visibility = View.VISIBLE
-                        b.btnNuevosRespaldos.visibility = View.GONE
                         b.btnDesactivar.visibility = View.GONE
                     }
                 } else toast(errorDeApi(r))
@@ -146,7 +143,7 @@ class SeguridadActivity : AppCompatActivity() {
                     // reconoce. Sin cambiarlo, la app quedaría bloqueada.
                     r.body()!!.token?.let { Sesion.token = it }
                     Sesion.totpActivado = true
-                    mostrarRespaldos(r.body()!!.codigos_respaldo.orEmpty(), activando = true)
+                    confirmarActivacion()
                 } else toast(errorDeApi(r))
             } catch (e: Exception) {
                 toast("No se pudo conectar con el servidor.\n${e.message}")
@@ -156,71 +153,28 @@ class SeguridadActivity : AppCompatActivity() {
         }
     }
 
-    private fun regenerarRespaldos(codigo: String) {
-        cargando(true)
-        lifecycleScope.launch {
-            try {
-                val r = ApiClient.api.totpNuevosRespaldos(TotpCodigoReq(codigo))
-                if (r.isSuccessful && r.body() != null)
-                    mostrarRespaldos(r.body()!!.codigos_respaldo.orEmpty(), activando = false)
-                else toast(errorDeApi(r))
-            } catch (e: Exception) {
-                toast("No se pudo conectar con el servidor.\n${e.message}")
-            } finally {
-                cargando(false)
-            }
-        }
-    }
-
     /**
-     * Los códigos se muestran UNA sola vez: en el servidor quedan
-     * hasheados y no hay forma de volver a leerlos.
+     * Ya no se entregan códigos de papel: quien pierde el teléfono acude
+     * al administrador, que reinicia la cuenta. Es la cadena de mando de
+     * la unidad, y evita que la única protección de una cuenta acabe
+     * siendo un papel guardado en cualquier parte.
      */
-    private fun mostrarRespaldos(codigos: List<String>, activando: Boolean) {
-        val texto = TextView(this).apply {
-            text = codigos.joinToString("\n")
-            typeface = android.graphics.Typeface.MONOSPACE
-            textSize = 17f
-            setTextIsSelectable(true)
-            setPadding(60, 30, 60, 20)
-            setTextColor(getColor(com.brigada.confronta.R.color.texto_principal))
-        }
+    private fun confirmarActivacion() {
         AlertDialog.Builder(this)
-            .setTitle(if (activando) "✅ Activada — guarda estos códigos" else "Códigos nuevos")
+            .setTitle("✅ Verificación activada")
             .setMessage(
-                "Anótalos en papel y guárdalos aparte del teléfono.\n\n" +
-                "Cada uno sirve UNA vez y son tu única forma de entrar si pierdes el " +
-                "teléfono. No se pueden volver a ver.")
-            .setView(texto)
+                "Desde ahora, para entrar necesitas tu contraseña y el código de 6 dígitos.\n\n" +
+                "Si pierdes el teléfono o cambias de equipo, acude al administrador de la " +
+                "unidad para que reinicie tu cuenta. No hay códigos de respaldo.")
             .setCancelable(false)
-            .setPositiveButton("Ya los guardé") { _, _ ->
-                // Si era el paso obligatorio del ingreso, recién ahora la
-                // cuenta puede usar la app: se entra al menú.
-                if (obligatorio && activando) {
+            .setPositiveButton("Entendido") { _, _ ->
+                if (obligatorio) {
                     startActivity(android.content.Intent(this, MenuActivity::class.java))
                     finish()
                 } else {
                     consultarEstado()
                 }
             }
-            .show()
-    }
-
-    /** Pide un código vigente antes de una operación delicada. */
-    private fun pedirCodigoY(accion: (String) -> Unit) {
-        val campo = EditText(this).apply {
-            hint = "Código de 6 dígitos"
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            setPadding(50, 40, 50, 40)
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Confirma con tu código")
-            .setView(campo)
-            .setPositiveButton("Continuar") { _, _ ->
-                val c = campo.text?.toString()?.trim().orEmpty()
-                if (c.isEmpty()) toast("Escribe el código") else accion(c)
-            }
-            .setNegativeButton("Cancelar", null)
             .show()
     }
 

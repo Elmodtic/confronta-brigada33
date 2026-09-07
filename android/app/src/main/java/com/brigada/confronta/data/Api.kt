@@ -35,15 +35,21 @@ interface Api {
     suspend fun totpIniciar(): Response<TotpInicio>
 
     @POST("api/mi/totp/activar")
-    suspend fun totpActivar(@Body body: TotpCodigoReq): Response<TotpRespaldoResp>
-
-    @POST("api/mi/totp/respaldo")
-    suspend fun totpNuevosRespaldos(@Body body: TotpCodigoReq): Response<TotpRespaldoResp>
+    suspend fun totpActivar(@Body body: TotpCodigoReq): Response<TotpActivarResp>
 
     @POST("api/mi/totp/desactivar")
     suspend fun totpDesactivar(@Body body: TotpDesactivarReq): Response<OkResp>
 
-    // El ADMIN se lo quita a quien perdio el telefono.
+    // Cambio de la propia contrasena (obligatorio tras un reinicio).
+    @POST("api/mi/password")
+    suspend fun cambiarPassword(@Body body: CambiarPasswordReq): Response<CambiarPasswordResp>
+
+    // El ADMIN reinicia la cuenta de quien perdio el telefono: deja la
+    // cedula como contrasena temporal y borra su segundo factor.
+    @POST("api/usuarios/{id}/reiniciar")
+    suspend fun reiniciarCuenta(@Path("id") id: Int): Response<ReinicioResp>
+
+    // Quita solo el segundo factor, sin tocar la contrasena.
     @POST("api/usuarios/{id}/totp/reset")
     suspend fun totpReset(@Path("id") id: Int): Response<OkResp>
 
