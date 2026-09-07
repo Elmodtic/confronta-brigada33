@@ -49,6 +49,13 @@ class LoginActivity : AppCompatActivity() {
         b.btnServidor.setOnClickListener { cambiarServidor() }
         b.imgEscudo.setOnLongClickListener { revelarServidor(); true }
 
+        // La dirección del túnel cambia sola cada vez que se reinicia. En vez
+        // de avisarle a cada usuario, la app la consulta en el directorio
+        // público al abrir. Si falla, se sigue con la que ya tenía.
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) { ApiClient.sincronizarDireccion() }
+        }
+
         // Si hay credenciales guardadas en este dispositivo, ofrece huella/rostro.
         // Abrir el almacen cifrado deriva la clave maestra en el Keystore y es
         // lento: se hace fuera del hilo principal para no congelar la pantalla.
@@ -119,7 +126,19 @@ class LoginActivity : AppCompatActivity() {
         cargando(true)
         lifecycleScope.launch {
             try {
-                val resp = ApiClient.api.login(LoginReq(usuario, pass))
+                // Si no hay conexión lo más probable es que el túnel haya
+                // cambiado de dirección. Se consulta el directorio y solo se
+                // reintenta si efectivamente trajo una nueva; si el segundo
+                // intento también falla, el problema es otro y hay que
+                // mostrarlo en vez de seguir insistiendo.
+                var resp = try {
+                    ApiClient.api.login(LoginReq(usuario, pass))
+                } catch (e: Exception) {
+                    if (!withContext(Dispatchers.IO) { ApiClient.sincronizarDireccion() }) throw e
+                    toast("El servidor cambió de dirección. Reintentando...")
+                    ApiClient.api.login(LoginReq(usuario, pass))
+                }
+
                 if (resp.isSuccessful && resp.body() != null) {
                     val r = resp.body()!!
                     // Con verificación en dos pasos la contraseña sola no
@@ -134,9 +153,8 @@ class LoginActivity : AppCompatActivity() {
                     toast(errorDeApi(resp))
                 }
             } catch (e: Exception) {
-                // Sin conexión lo más probable es que la dirección del túnel
-                // haya cambiado. Se revela el ajuste justo cuando hace falta,
-                // para poder corregirlo sin reinstalar la app.
+                // Se revela el ajuste manual justo cuando hace falta, para
+                // poder corregirlo sin reinstalar la app.
                 mostrarServidorActual()
                 b.btnServidor.visibility = View.VISIBLE
                 toast("No se pudo conectar con el servidor.\n" +

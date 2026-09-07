@@ -75,15 +75,48 @@ if (-not $url) {
 
 $url | Set-Content -Path $archivoUrl -Encoding utf8
 
+# --- Publicar la direccion en el directorio que consulta la app ---
+#
+# La app lee servidor.json desde el repositorio publico al abrirse, asi
+# que subir este archivo es lo que evita tener que avisarle a cada
+# usuario. Si el push falla (sin internet, sin credenciales) no se
+# aborta nada: el tunel ya esta arriba y queda la via manual.
+$archivoDirectorio = Join-Path $base 'servidor.json'
+$json = @"
+{
+  "url": "$url/",
+  "actualizado": "$(Get-Date -Format 'yyyy-MM-dd HH:mm')",
+  "nota": "Direccion actual del servidor de Confronta Diaria. La app la consulta al abrir, asi que un cambio de tunel no obliga a reinstalar el APK. Lo actualiza iniciar_tunel.ps1."
+}
+"@
+$json | Set-Content -Path $archivoDirectorio -Encoding utf8
+
+Write-Host "Publicando la direccion para las apps..." -ForegroundColor Cyan
+Push-Location $base
+try {
+    git add servidor.json 2>&1 | Out-Null
+    git commit -m "chore: direccion del tunel $url" 2>&1 | Out-Null
+    git push origin main 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "  Publicada. Las apps la tomaran solas al abrirse." -ForegroundColor Green
+    } else {
+        Write-Host "  No se pudo publicar. Pasa la direccion a mano." -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "  No se pudo publicar. Pasa la direccion a mano." -ForegroundColor Yellow
+}
+Pop-Location
+
 Write-Host ""
 Write-Host "===============================================================" -ForegroundColor Green
 Write-Host "  SERVIDOR PUBLICADO" -ForegroundColor Green
 Write-Host ""
 Write-Host "  $url" -ForegroundColor White
 Write-Host ""
-Write-Host "  Guardada en: url_tunel.txt" -ForegroundColor Gray
-Write-Host "  Pasa esta direccion a quien use la app y que la escriba en" -ForegroundColor Gray
-Write-Host "  el boton 'Servidor' de la pantalla de inicio de sesion." -ForegroundColor Gray
+Write-Host "  Guardada en: url_tunel.txt y servidor.json" -ForegroundColor Gray
+Write-Host "  Las apps consultan servidor.json al abrirse: si se publico," -ForegroundColor Gray
+Write-Host "  nadie tiene que hacer nada. Si no, esta el boton 'Servidor'" -ForegroundColor Gray
+Write-Host "  de la pantalla de inicio de sesion." -ForegroundColor Gray
 Write-Host "===============================================================" -ForegroundColor Green
 Write-Host ""
 

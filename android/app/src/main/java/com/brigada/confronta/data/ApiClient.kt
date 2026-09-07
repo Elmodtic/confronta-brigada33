@@ -26,6 +26,18 @@ object ApiClient {
     /** Dirección con la que sale el APK. Sirve mientras el túnel no cambie. */
     const val URL_POR_DEFECTO = "https://demand-repeated-bios-ancient.trycloudflare.com/"
 
+    /**
+     * Directorio público con la dirección vigente del servidor.
+     *
+     * El túnel gratuito cambia de dirección cada vez que se reinicia, y
+     * avisarle a mano a cada usuario no escala. La app consulta este
+     * archivo al abrir y se reconfigura sola. Es un JSON en el repositorio
+     * público del proyecto: no expone nada que no esté ya publicado, y no
+     * cuesta ni depende de otro servicio.
+     */
+    private const val URL_DIRECTORIO =
+        "https://raw.githubusercontent.com/Elmodtic/confronta-brigada33/main/servidor.json"
+
     private const val PREFS = "confronta_config"
     private const val CLAVE_URL = "base_url"
 
@@ -33,6 +45,37 @@ object ApiClient {
 
     fun init(ctx: Context) {
         prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    }
+
+    /**
+     * Busca en el directorio la dirección vigente y la adopta si cambió.
+     * Devuelve true solo si hubo cambio.
+     *
+     * Todo fallo se ignora a propósito: sin internet, con GitHub caído o
+     * con el archivo mal formado, la app sigue con la dirección que ya
+     * tenía. Esto es una comodidad, nunca un requisito para arrancar.
+     */
+    fun sincronizarDireccion(): Boolean {
+        return try {
+            val cliente = OkHttpClient.Builder()
+                .connectTimeout(6, TimeUnit.SECONDS)
+                .readTimeout(6, TimeUnit.SECONDS)
+                .build()
+            val peticion = okhttp3.Request.Builder().url(URL_DIRECTORIO).build()
+            cliente.newCall(peticion).execute().use { resp ->
+                if (!resp.isSuccessful) return false
+                val cuerpo = resp.body?.string() ?: return false
+                val publicada = normalizar(
+                    com.google.gson.JsonParser.parseString(cuerpo)
+                        .asJsonObject["url"].asString)
+                if (publicada.isBlank() || publicada == baseUrl) return false
+                prefs?.edit()?.putString(CLAVE_URL, publicada)?.apply()
+                reiniciar()
+                true
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /**
