@@ -229,6 +229,11 @@
             android:textColor="@color/verde_militar_oscuro" android:textSize="16sp"
             android:layout_marginTop="22dp" />
 
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Toca una unidad para ver cuántos pasaron y cuántos faltan."
+            android:textColor="@color/gris_texto" android:textSize="12sp" />
+
         <!-- Encabezado de la tabla: evita repetir "D:" "A:" "M:" en cada fila -->
         <LinearLayout
             android:layout_width="match_parent" android:layout_height="wrap_content"

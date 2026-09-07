@@ -8,6 +8,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.brigada.confronta.data.ApiClient
+import com.brigada.confronta.data.Avance
 import com.brigada.confronta.data.ProdUnidad
 import com.brigada.confronta.databinding.ActivityProduccionBinding
 import kotlinx.coroutines.launch
@@ -98,30 +99,44 @@ class ProduccionActivity : AppCompatActivity() {
     private fun dp(valor: Int): Int = (valor * resources.displayMetrics.density).toInt()
 
     /**
-     * Tabla de unidades: solo la confronta a preparar. El detalle de quién
-     * pasó y quién falta ya está arriba, en las dos secciones grandes, y
-     * repetirlo aquí volvía la lista ilegible.
+     * Tabla de unidades. El renglón muestra solo la confronta a preparar,
+     * que es lo que el ranchero necesita de un vistazo; al tocarlo se
+     * despliega el detalle de esa unidad (quién pasó y quién falta), que
+     * repetido en todos los renglones volvía la lista ilegible.
      */
     private fun pintarUnidades(unidades: List<ProdUnidad>) {
         b.contenedorUnidades.removeAllViews()
         b.tvVacio.visibility = if (unidades.isEmpty()) View.VISIBLE else View.GONE
         for (u in unidades) {
+            val siglas = u.siglas ?: u.unidad
+
+            val titulo = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                text = "▸  $siglas"
+                textSize = 14f
+                setTextColor(getColor(com.brigada.confronta.R.color.texto_principal))
+            }
             val fila = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(dp(4), dp(12), dp(4), dp(12))
                 gravity = Gravity.CENTER_VERTICAL
+                isClickable = true
+                setBackgroundResource(android.R.drawable.list_selector_background)
+                addView(titulo)
+                addView(celda(u.desayunos.confronta))
+                addView(celda(u.almuerzos.confronta))
+                addView(celda(u.meriendas.confronta))
             }
-            val izq = TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                text = u.siglas ?: u.unidad
-                textSize = 14f
-                setTextColor(getColor(com.brigada.confronta.R.color.texto_principal))
+
+            val detalle = detalleUnidad(u).apply { visibility = View.GONE }
+            fila.setOnClickListener {
+                val abierto = detalle.visibility == View.VISIBLE
+                detalle.visibility = if (abierto) View.GONE else View.VISIBLE
+                titulo.text = if (abierto) "▸  $siglas" else "▾  $siglas"
             }
-            fila.addView(izq)
-            fila.addView(celda(u.desayunos.confronta))
-            fila.addView(celda(u.almuerzos.confronta))
-            fila.addView(celda(u.meriendas.confronta))
+
             b.contenedorUnidades.addView(fila)
+            b.contenedorUnidades.addView(detalle)
 
             val linea = View(this).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
@@ -130,4 +145,30 @@ class ProduccionActivity : AppCompatActivity() {
             b.contenedorUnidades.addView(linea)
         }
     }
+
+    /** Panel que se despliega bajo una unidad con el avance de sus comidas. */
+    private fun detalleUnidad(u: ProdUnidad): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(12), dp(10), dp(12), dp(14))
+        setBackgroundColor(0xFFECEDF0.toInt())
+
+        addView(TextView(this@ProduccionActivity).apply {
+            text = u.unidad
+            textSize = 12f
+            setTextColor(getColor(com.brigada.confronta.R.color.gris_texto))
+            setPadding(0, 0, 0, dp(8))
+        })
+        addView(filaDetalle("Desayunos", u.desayunos))
+        addView(filaDetalle("Almuerzos", u.almuerzos))
+        addView(filaDetalle("Meriendas", u.meriendas))
+    }
+
+    /** "Desayunos   6 a preparar · 4 pasaron · 2 faltan" */
+    private fun filaDetalle(comida: String, a: Avance): TextView =
+        TextView(this).apply {
+            text = "$comida:  ${a.confronta} a preparar  ·  ${a.pasaron} pasaron  ·  ${a.faltan} faltan"
+            textSize = 13f
+            setTextColor(getColor(com.brigada.confronta.R.color.texto_secundario))
+            setPadding(0, dp(3), 0, dp(3))
+        }
 }
