@@ -19,6 +19,9 @@ data class LoginResp(
     val nombres: String?,
     val apellidos: String?,
     val totp_activado: Boolean = false,
+    // El servidor exige el segundo factor a todos menos al ADMIN: mientras
+    // no lo active, la sesion solo sirve para inscribirse.
+    val totp_obligatorio: Boolean = false,
     val requiere_totp: Boolean = false,
     val token_parcial: String? = null,
     val mensaje: String? = null
@@ -43,7 +46,10 @@ data class TotpDesactivarReq(val password: String, val codigo: String)
 data class TotpRespaldoResp(
     val ok: Boolean,
     val codigos_respaldo: List<String>?,
-    val mensaje: String?
+    val mensaje: String?,
+    // Al activar, el servidor devuelve una sesion nueva que ya reconoce el
+    // segundo factor; sin ella habria que volver a iniciar sesion.
+    val token: String? = null
 )
 
 data class Kpis(

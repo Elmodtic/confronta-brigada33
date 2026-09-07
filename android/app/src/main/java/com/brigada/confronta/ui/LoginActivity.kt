@@ -179,7 +179,16 @@ class LoginActivity : AppCompatActivity() {
             CredencialesSeguras.guardar(this@LoginActivity, usuario, pass)
         }
         toast("Bienvenido, ${Sesion.nombre ?: usuario}")
-        irAlMenu()
+        // El servidor exige el segundo factor a todos menos al ADMIN. Sin
+        // inscribirse, la sesión no sirve para nada más, así que se lleva
+        // directo a la inscripción en vez de a un menú que fallaría entero.
+        if (r.totp_obligatorio) {
+            startActivity(Intent(this, SeguridadActivity::class.java)
+                .putExtra(SeguridadActivity.EXTRA_OBLIGATORIO, true))
+            finish()
+        } else {
+            irAlMenu()
+        }
     }
 
     /**

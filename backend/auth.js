@@ -45,10 +45,33 @@ function verificarToken(req, res, next) {
     if (usuario.paso) {
       return res.status(401).json({ error: 'Falta completar la verificación en dos pasos' });
     }
-    req.usuario = usuario; // { id_usuario, username, rol, id_personal, jti, iat, exp }
+
+    // La inscripción en dos pasos es obligatoria salvo para el ADMIN. Se
+    // exige aquí, en el único punto por el que pasan TODAS las rutas
+    // protegidas, y no en cada una: una ruta nueva queda cubierta sola.
+    // Imponerlo solo en la app no serviría de nada, porque cualquiera
+    // puede llamar la API por su cuenta.
+    if (usuario.rol !== 'ADMIN' && !usuario.totp && !RUTAS_SIN_SEGUNDO_FACTOR.has(req.path)) {
+      return res.status(403).json({
+        error: 'Debes activar la verificación en dos pasos para usar la aplicación.',
+        requiere_inscripcion_totp: true,
+      });
+    }
+
+    req.usuario = usuario; // { id_usuario, username, rol, id_personal, totp, jti, iat, exp }
     next();
   });
 }
+
+// Lo mínimo para poder inscribirse (o salir) sin haberlo hecho todavía.
+// Cualquier otra ruta queda bloqueada hasta que active el segundo factor.
+const RUTAS_SIN_SEGUNDO_FACTOR = new Set([
+  '/api/logout',
+  '/api/mi/perfil',
+  '/api/mi/totp',
+  '/api/mi/totp/iniciar',
+  '/api/mi/totp/activar',
+]);
 
 // Restringe una ruta a ciertos roles, ej: soloRol('ADMIN')
 function soloRol(...roles) {

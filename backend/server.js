@@ -266,21 +266,42 @@ async function fallarIntento(usuario, ahora, res, mensajeBase) {
   });
 }
 
+/**
+ * La verificación en dos pasos es OBLIGATORIA para todos menos el ADMIN.
+ *
+ * El ADMIN queda fuera a propósito: es quien restablece el segundo factor
+ * de los demás cuando pierden el teléfono, y si él mismo se quedara
+ * bloqueado no habría nadie que pudiera devolverle el acceso.
+ */
+function faltaInscribirTotp(rol, totpActivado) {
+  return rol !== 'ADMIN' && !totpActivado;
+}
+
+/**
+ * El estado del segundo factor viaja dentro del token para no consultar la
+ * base en cada petición. Como el token dura 15 minutos, al activarlo se
+ * emite uno nuevo en vez de esperar a que caduque.
+ */
+function firmarSesion(usuario) {
+  return jwt.sign(
+    {
+      id_usuario: usuario.id_usuario,
+      username: usuario.username,
+      rol: usuario.rol,
+      id_personal: usuario.id_personal || null,
+      totp: !!usuario.totp_activado,
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: '15m', jwtid: crypto.randomUUID() });
+}
+
 // Sesión completa: se emite solo cuando ya se superaron todos los pasos.
 async function emitirSesion(usuario, res, detalleAuditoria) {
   await pool.query(
     'UPDATE usuario SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id_usuario = ?',
     [usuario.id_usuario]);
 
-  const token = jwt.sign(
-    {
-      id_usuario: usuario.id_usuario,
-      username: usuario.username,
-      rol: usuario.rol,
-      id_personal: usuario.id_personal || null,
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: '15m', jwtid: crypto.randomUUID() });
+  const token = firmarSesion(usuario);
 
   await auditar(usuario.id_usuario, 'LOGIN', detalleAuditoria);
   res.json({
@@ -293,6 +314,7 @@ async function emitirSesion(usuario, res, detalleAuditoria) {
     nombres: usuario.nombres || null,
     apellidos: usuario.apellidos || null,
     totp_activado: !!usuario.totp_activado,
+    totp_obligatorio: faltaInscribirTotp(usuario.rol, usuario.totp_activado),
   });
 }
 
@@ -500,6 +522,10 @@ app.post('/api/mi/totp/activar', verificarToken, async (req, res) => {
     res.json({
       ok: true,
       codigos_respaldo: codigos,
+      // El token que trae el usuario todavía dice que no tiene segundo
+      // factor y lo dejaría bloqueado hasta que caduque. Se le entrega uno
+      // nuevo para que siga trabajando sin volver a iniciar sesión.
+      token: firmarSesion({ ...req.usuario, totp_activado: 1 }),
       mensaje: 'Guarda estos códigos. Son la única forma de entrar si pierdes el teléfono.',
     });
   } catch (e) {
@@ -535,7 +561,15 @@ app.post('/api/mi/totp/respaldo', verificarToken, async (req, res) => {
 });
 
 // --- Desactivar (pide contraseña Y código: son dos factores otra vez) ---
+//
+// Solo el ADMIN puede apagarlo, porque para el resto es obligatorio. Si
+// un comensal pudiera desactivarlo, la exigencia no valdría nada.
 app.post('/api/mi/totp/desactivar', verificarToken, async (req, res) => {
+  if (req.usuario.rol !== 'ADMIN') {
+    return res.status(403).json({
+      error: 'La verificación en dos pasos es obligatoria y no se puede desactivar.',
+    });
+  }
   try {
     const [[u]] = await pool.query(
       'SELECT username, password_hash, totp_secreto, totp_activado, totp_ultimo_paso FROM usuario WHERE id_usuario = ?',

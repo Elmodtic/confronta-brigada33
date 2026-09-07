@@ -24,13 +24,34 @@ import kotlinx.coroutines.launch
  */
 class SeguridadActivity : AppCompatActivity() {
 
+    companion object {
+        /** Se abre como paso forzado del ingreso, no como ajuste opcional. */
+        const val EXTRA_OBLIGATORIO = "obligatorio"
+    }
+
     private lateinit var b: ActivitySeguridadBinding
+
+    /** Cuenta que todavía no puede usar la app hasta inscribirse. */
+    private var obligatorio = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivitySeguridadBinding.inflate(layoutInflater)
         setContentView(b.root)
-        supportActionBar?.title = "Verificación en dos pasos"
+
+        obligatorio = intent.getBooleanExtra(EXTRA_OBLIGATORIO, false)
+        supportActionBar?.title =
+            if (obligatorio) "Activa tu verificación" else "Verificación en dos pasos"
+
+        if (obligatorio) {
+            b.tvObligatorio.visibility = View.VISIBLE
+            // Volver atrás sin inscribirse dejaría la sesión inservible: se
+            // sale del todo, que es lo único coherente.
+            onBackPressedDispatcher.addCallback(this,
+                object : androidx.activity.OnBackPressedCallback(true) {
+                    override fun handleOnBackPressed() = salir()
+                })
+        }
 
         b.btnEmpezar.setOnClickListener { iniciarInscripcion() }
         b.btnActivar.setOnClickListener { activar() }
@@ -38,6 +59,14 @@ class SeguridadActivity : AppCompatActivity() {
         b.btnDesactivar.setOnClickListener { desactivar() }
 
         consultarEstado()
+    }
+
+    private fun salir() {
+        Sesion.cerrar()
+        startActivity(android.content.Intent(this, LoginActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                      android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        finish()
     }
 
     private fun cargando(activo: Boolean) {
@@ -59,8 +88,12 @@ class SeguridadActivity : AppCompatActivity() {
                             "Te quedan ${e.codigos_respaldo_disponibles} códigos de respaldo."
                         b.btnEmpezar.visibility = View.GONE
                         b.panelInscripcion.visibility = View.GONE
+                        b.tvObligatorio.visibility = View.GONE
                         b.btnNuevosRespaldos.visibility = View.VISIBLE
-                        b.btnDesactivar.visibility = View.VISIBLE
+                        // Solo el ADMIN puede apagarlo: para el resto es
+                        // obligatorio y el servidor rechaza el intento.
+                        b.btnDesactivar.visibility =
+                            if (Sesion.rol == "ADMIN") View.VISIBLE else View.GONE
                     } else {
                         b.tvEstado.text = "⚠️  Desactivada"
                         b.tvDetalle.text = "Tu cuenta entra solo con la contraseña."
@@ -108,6 +141,11 @@ class SeguridadActivity : AppCompatActivity() {
                 val r = ApiClient.api.totpActivar(TotpCodigoReq(codigo))
                 if (r.isSuccessful && r.body() != null) {
                     b.etCodigo.text = null
+                    // El token que traíamos decía que la cuenta no tenía
+                    // segundo factor; el servidor manda uno nuevo que ya lo
+                    // reconoce. Sin cambiarlo, la app quedaría bloqueada.
+                    r.body()!!.token?.let { Sesion.token = it }
+                    Sesion.totpActivado = true
                     mostrarRespaldos(r.body()!!.codigos_respaldo.orEmpty(), activando = true)
                 } else toast(errorDeApi(r))
             } catch (e: Exception) {
@@ -155,7 +193,16 @@ class SeguridadActivity : AppCompatActivity() {
                 "teléfono. No se pueden volver a ver.")
             .setView(texto)
             .setCancelable(false)
-            .setPositiveButton("Ya los guardé") { _, _ -> consultarEstado() }
+            .setPositiveButton("Ya los guardé") { _, _ ->
+                // Si era el paso obligatorio del ingreso, recién ahora la
+                // cuenta puede usar la app: se entra al menú.
+                if (obligatorio && activando) {
+                    startActivity(android.content.Intent(this, MenuActivity::class.java))
+                    finish()
+                } else {
+                    consultarEstado()
+                }
+            }
             .show()
     }
 
