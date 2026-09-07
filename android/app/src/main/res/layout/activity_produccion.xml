@@ -36,9 +36,15 @@
 
         <TextView
             android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Platos a preparar" android:textStyle="bold"
+            android:text="Confronta a preparar" android:textStyle="bold"
             android:textColor="@color/verde_militar_oscuro" android:textSize="16sp"
             android:layout_marginTop="12dp" />
+
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="El número grande es la confronta del día. Debajo, cuántos ya pasaron a comer y cuántos faltan."
+            android:textColor="@color/gris_texto" android:textSize="12sp"
+            android:layout_marginTop="2dp" />
 
         <!-- Totales grandes -->
         <LinearLayout
@@ -57,6 +63,10 @@
                         android:textColor="@color/blanco" android:textSize="30sp" android:textStyle="bold" />
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                         android:text="Desayunos" android:textColor="@color/blanco" android:textSize="12sp" />
+                    <TextView android:id="@+id/tvDesayunosAvance"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="—" android:textColor="@color/blanco" android:textSize="12sp"
+                        android:gravity="center" android:layout_marginTop="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -72,6 +82,10 @@
                         android:textColor="@color/blanco" android:textSize="30sp" android:textStyle="bold" />
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                         android:text="Almuerzos" android:textColor="@color/blanco" android:textSize="12sp" />
+                    <TextView android:id="@+id/tvAlmuerzosAvance"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="—" android:textColor="@color/blanco" android:textSize="12sp"
+                        android:gravity="center" android:layout_marginTop="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -87,6 +101,10 @@
                         android:textColor="@color/blanco" android:textSize="30sp" android:textStyle="bold" />
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                         android:text="Meriendas" android:textColor="@color/blanco" android:textSize="12sp" />
+                    <TextView android:id="@+id/tvMeriendasAvance"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="—" android:textColor="@color/blanco" android:textSize="12sp"
+                        android:gravity="center" android:layout_marginTop="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>

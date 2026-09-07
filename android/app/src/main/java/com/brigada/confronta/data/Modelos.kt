@@ -178,19 +178,32 @@ data class AuditoriaItem(
 )
 
 // ---- Producción (ranchero) ----
+/**
+ * Avance de una comida en un día:
+ *   confronta = raciones a preparar (reservas vigentes)
+ *   pasaron   = ya canjearon su QR y comieron
+ *   faltan    = todavía no llegan al rancho
+ * Siempre se cumple que confronta = pasaron + faltan.
+ */
+data class Avance(
+    val confronta: Int = 0,
+    val pasaron: Int = 0,
+    val faltan: Int = 0
+)
+
 data class ProdUnidad(
     val unidad: String,
     val siglas: String?,
-    val desayunos: Int,
-    val almuerzos: Int,
-    val meriendas: Int
+    val desayunos: Avance,
+    val almuerzos: Avance,
+    val meriendas: Avance
 )
 
 data class Produccion(
     val fecha: String,
-    val desayunos: Int,
-    val almuerzos: Int,
-    val meriendas: Int,
+    val desayunos: Avance,
+    val almuerzos: Avance,
+    val meriendas: Avance,
     val personas: Int,
     val por_unidad: List<ProdUnidad>
 )
@@ -248,7 +261,9 @@ data class CanjeResp(
     val unidad: String?,
     val comida: String?,
     val fecha: String?,
-    val monto: Double
+    val monto: Double,
+    // Cómo va esa comida ese día justo después de este canje.
+    val avance: Avance?
 )
 
 // ---- Perfil ----

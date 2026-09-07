@@ -51,10 +51,17 @@ class CanjeActivity : AppCompatActivity() {
                 val resp = ApiClient.api.canjear(CanjeReq(token))
                 if (resp.isSuccessful && resp.body() != null) {
                     val r = resp.body()!!
+                    // Tras cada canje se muestra cómo va esa comida ese día,
+                    // para que el ranchero sepa cuántos le faltan por atender
+                    // sin tener que salir a otra pantalla.
+                    val avance = r.avance?.let {
+                        "\n\n${r.comida} del ${r.fecha}\n" +
+                        "Confronta: ${it.confronta}  ·  Pasaron: ${it.pasaron}  ·  Faltan: ${it.faltan}"
+                    } ?: ""
                     b.tvDetalle.text =
                         "Comensal: ${r.persona}\nUnidad: ${r.unidad ?: "-"}\n" +
                         "Comida: ${r.comida}  (${money(r.monto)})\n" +
-                        "Estado: PAGADA ✓ — acceso autorizado al rancho"
+                        "Estado: PAGADA ✓ — acceso autorizado al rancho" + avance
                     b.cardResultado.visibility = View.VISIBLE
                     b.etCodigo.text = null
                 } else {

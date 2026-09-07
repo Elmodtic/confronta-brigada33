@@ -120,7 +120,7 @@
             android:id="@+id/btnProduccion"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginTop="10dp" android:paddingVertical="16dp"
-            android:text="🍳  Producción del día (platos a cocinar)"
+            android:text="🍳  Confronta del día (a cocinar)"
             android:textSize="15sp" app:cornerRadius="12dp"
             android:visibility="gone" />
 

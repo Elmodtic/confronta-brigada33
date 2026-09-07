@@ -927,13 +927,20 @@ app.post('/api/canjear', verificarToken, soloRol('RANCHERO'), async (req, res) =
       [req.usuario.id_usuario, t.id_ticket]);
     await conn.commit();
     await auditar(req.usuario.id_usuario, 'CANJE', `Canjeó ${t.comida} de ${t.nombres} ${t.apellidos}`);
+
+    // El ranchero necesita saber, sin salir de la pantalla, cómo va la
+    // comida que acaba de marcar: cuántos pasaron y cuántos faltan.
+    const fechaTicket = fechaIso(t.fecha);
+    const avance = await avanceDeComida(fechaTicket, t.comida);
+
     res.json({
       ok: true,
       persona: `${t.grado || ''} ${t.apellidos || ''} ${t.nombres || ''}`.trim(),
       unidad: t.unidad,
       comida: t.comida,
-      fecha: t.fecha,
+      fecha: fechaTicket,
       monto: Number(t.precio),
+      avance,
     });
   } catch (e) {
     await conn.rollback();
@@ -1332,36 +1339,104 @@ app.get('/api/relevos', verificarToken, soloRol('ADMIN'), async (_req, res) => {
 });
 
 // ===============================================================
-// PRODUCCIÓN (ranchero): cuántos platos cocinar en una fecha
+// CONFRONTA DEL DÍA (ranchero): cuánto cocinar y cuánto ya pasó
+//
+// Se cuenta sobre `ticket`, no sobre `confronta`, porque el ticket es lo
+// que el canje del QR modifica. Así las tres cifras siempre cuadran
+// entre sí y el avance se mueve en el mismo momento en que el ranchero
+// escanea:
+//
+//   confronta = tickets vigentes  (ACTIVO + CANJEADO)   -> hay que cocinar
+//   pasaron   = CANJEADO                                -> ya comieron
+//   faltan    = ACTIVO                                  -> aún no llegan
+//
+// Un ticket ANULADO es una reserva que se dio de baja y se devolvió el
+// dinero: no se cocina para él y por eso no entra en ninguna columna.
 // ===============================================================
+const COMIDA_A_CAMPO = { DESAYUNO: 'desayunos', ALMUERZO: 'almuerzos', MERIENDA: 'meriendas' };
+
+// Las columnas DATE llegan como Date de JavaScript a medianoche local. Se
+// formatea con los componentes locales y no con toISOString(), que pasa a
+// UTC y puede correr el día.
+function fechaIso(valor) {
+  if (!(valor instanceof Date)) return String(valor).slice(0, 10);
+  const mes = String(valor.getMonth() + 1).padStart(2, '0');
+  const dia = String(valor.getDate()).padStart(2, '0');
+  return `${valor.getFullYear()}-${mes}-${dia}`;
+}
+
+function avanceVacio() {
+  return { confronta: 0, pasaron: 0, faltan: 0 };
+}
+
+// Fila de conteos -> objeto de avance, con los números ya en Number.
+function aAvance(r) {
+  return {
+    confronta: Number(r.confronta || 0),
+    pasaron: Number(r.pasaron || 0),
+    faltan: Number(r.faltan || 0),
+  };
+}
+
+const SUMAS_AVANCE = `
+  SUM(estado <> 'ANULADO')  AS confronta,
+  SUM(estado =  'CANJEADO') AS pasaron,
+  SUM(estado =  'ACTIVO')   AS faltan`;
+
+// Avance de una sola comida en una fecha (lo que se devuelve tras canjear).
+async function avanceDeComida(fecha, comida) {
+  const [[r]] = await pool.query(
+    `SELECT ${SUMAS_AVANCE} FROM ticket WHERE fecha = ? AND comida = ?`, [fecha, comida]);
+  return { comida, fecha, ...aAvance(r) };
+}
+
 app.get('/api/produccion/:fecha', verificarToken, soloRol('ADMIN', 'RANCHERO'), async (req, res) => {
   const fecha = req.params.fecha;
-  const [tot] = await pool.query(`
-    SELECT SUM(desayuno) AS desayunos, SUM(almuerzo) AS almuerzos, SUM(merienda) AS meriendas,
-           COUNT(*) AS personas
-    FROM confronta WHERE fecha = ?`, [fecha]);
+  try {
+    const [porComida] = await pool.query(
+      `SELECT comida, ${SUMAS_AVANCE} FROM ticket WHERE fecha = ? GROUP BY comida`, [fecha]);
 
-  const [porUnidad] = await pool.query(`
-    SELECT u.nombre AS unidad, u.siglas,
-           SUM(c.desayuno) AS desayunos, SUM(c.almuerzo) AS almuerzos, SUM(c.merienda) AS meriendas
-    FROM confronta c
-    JOIN personal p ON c.id_personal = p.id_personal
-    JOIN unidad u   ON p.id_unidad   = u.id_unidad
-    WHERE c.fecha = ?
-    GROUP BY u.id_unidad, u.nombre, u.siglas
-    ORDER BY u.nombre`, [fecha]);
+    const totales = { desayunos: avanceVacio(), almuerzos: avanceVacio(), meriendas: avanceVacio() };
+    porComida.forEach((r) => { totales[COMIDA_A_CAMPO[r.comida]] = aAvance(r); });
 
-  res.json({
-    fecha,
-    desayunos: Number(tot[0].desayunos || 0),
-    almuerzos: Number(tot[0].almuerzos || 0),
-    meriendas: Number(tot[0].meriendas || 0),
-    personas: Number(tot[0].personas || 0),
-    por_unidad: porUnidad.map((u) => ({
-      unidad: u.unidad, siglas: u.siglas,
-      desayunos: Number(u.desayunos), almuerzos: Number(u.almuerzos), meriendas: Number(u.meriendas),
-    })),
-  });
+    // Personas distintas con al menos una comida vigente ese día.
+    const [[per]] = await pool.query(
+      `SELECT COUNT(DISTINCT id_usuario) AS n FROM ticket
+       WHERE fecha = ? AND estado <> 'ANULADO'`, [fecha]);
+
+    const [filas] = await pool.query(`
+      SELECT un.id_unidad, un.nombre AS unidad, un.siglas, t.comida, ${SUMAS_AVANCE}
+      FROM ticket t
+      JOIN usuario  us ON t.id_usuario  = us.id_usuario
+      JOIN personal pe ON us.id_personal = pe.id_personal
+      JOIN unidad   un ON pe.id_unidad   = un.id_unidad
+      WHERE t.fecha = ?
+      GROUP BY un.id_unidad, un.nombre, un.siglas, t.comida
+      ORDER BY un.nombre`, [fecha]);
+
+    // La consulta trae una fila por unidad y comida; se agrupan por unidad
+    // conservando el orden alfabético que ya trae el ORDER BY.
+    const unidades = new Map();
+    for (const f of filas) {
+      if (!unidades.has(f.id_unidad)) {
+        unidades.set(f.id_unidad, {
+          unidad: f.unidad, siglas: f.siglas,
+          desayunos: avanceVacio(), almuerzos: avanceVacio(), meriendas: avanceVacio(),
+        });
+      }
+      unidades.get(f.id_unidad)[COMIDA_A_CAMPO[f.comida]] = aAvance(f);
+    }
+
+    res.json({
+      fecha,
+      personas: Number(per.n || 0),
+      ...totales,
+      por_unidad: [...unidades.values()],
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al consultar la confronta del día' });
+  }
 });
 
 // ===============================================================
@@ -2026,23 +2101,55 @@ app.get('/api/reportes/mi-consumo.xlsx', verificarToken, async (req, res) => {
 app.get('/api/reportes/produccion.xlsx', verificarToken, soloRol('RANCHERO', 'ADMIN'), async (req, res) => {
   const fecha = (req.query.fecha || new Date().toISOString().slice(0, 10));
   const [rows] = await pool.query(`
-    SELECT u.nombre unidad, u.siglas,
-           SUM(c.desayuno) d, SUM(c.almuerzo) a, SUM(c.merienda) m
-    FROM confronta c
-    JOIN personal p ON c.id_personal = p.id_personal
-    JOIN unidad u   ON p.id_unidad   = u.id_unidad
-    WHERE c.fecha = ? GROUP BY u.id_unidad, u.nombre, u.siglas ORDER BY u.nombre`, [fecha]);
+    SELECT un.nombre unidad, un.siglas, t.comida, ${SUMAS_AVANCE}
+    FROM ticket t
+    JOIN usuario  us ON t.id_usuario  = us.id_usuario
+    JOIN personal pe ON us.id_personal = pe.id_personal
+    JOIN unidad   un ON pe.id_unidad   = un.id_unidad
+    WHERE t.fecha = ?
+    GROUP BY un.id_unidad, un.nombre, un.siglas, t.comida
+    ORDER BY un.nombre`, [fecha]);
+
+  // Una fila por unidad, con las tres comidas en columnas.
+  const porUnidad = new Map();
+  for (const r of rows) {
+    if (!porUnidad.has(r.unidad))
+      porUnidad.set(r.unidad, {
+        unidad: r.unidad, siglas: r.siglas,
+        desayunos: avanceVacio(), almuerzos: avanceVacio(), meriendas: avanceVacio(),
+      });
+    porUnidad.get(r.unidad)[COMIDA_A_CAMPO[r.comida]] = aAvance(r);
+  }
+
   const wb = new ExcelJS.Workbook();
-  const h = wb.addWorksheet('Producción');
-  h.addRow([`Producción de rancho — ${fecha}`]);
+  const h = wb.addWorksheet('Confronta');
+  h.addRow([`Confronta del rancho — ${fecha}`]);
+  h.addRow(['Confronta = raciones a preparar · Pasaron = ya comieron · Faltan = aún no llegan']);
   h.addRow([]);
-  h.addRow(['Unidad', 'Siglas', 'Desayunos', 'Almuerzos', 'Meriendas']);
-  h.getRow(3).font = { bold: true };
-  let td = 0, ta = 0, tm = 0;
-  rows.forEach((r) => { td += Number(r.d); ta += Number(r.a); tm += Number(r.m); h.addRow([r.unidad, r.siglas, Number(r.d), Number(r.a), Number(r.m)]); });
-  h.addRow(['TOTAL', '', td, ta, tm]).font = { bold: true };
-  h.columns.forEach((c) => { c.width = 22; });
-  await enviarExcel(res, wb, `produccion_${fecha}.xlsx`);
+  h.addRow(['Unidad', 'Siglas',
+    'Desayuno confronta', 'Desayuno pasaron', 'Desayuno faltan',
+    'Almuerzo confronta', 'Almuerzo pasaron', 'Almuerzo faltan',
+    'Merienda confronta', 'Merienda pasaron', 'Merienda faltan']);
+  h.getRow(4).font = { bold: true };
+
+  const total = { desayunos: avanceVacio(), almuerzos: avanceVacio(), meriendas: avanceVacio() };
+  for (const u of porUnidad.values()) {
+    for (const campo of Object.values(COMIDA_A_CAMPO)) {
+      total[campo].confronta += u[campo].confronta;
+      total[campo].pasaron += u[campo].pasaron;
+      total[campo].faltan += u[campo].faltan;
+    }
+    h.addRow([u.unidad, u.siglas,
+      u.desayunos.confronta, u.desayunos.pasaron, u.desayunos.faltan,
+      u.almuerzos.confronta, u.almuerzos.pasaron, u.almuerzos.faltan,
+      u.meriendas.confronta, u.meriendas.pasaron, u.meriendas.faltan]);
+  }
+  h.addRow(['TOTAL', '',
+    total.desayunos.confronta, total.desayunos.pasaron, total.desayunos.faltan,
+    total.almuerzos.confronta, total.almuerzos.pasaron, total.almuerzos.faltan,
+    total.meriendas.confronta, total.meriendas.pasaron, total.meriendas.faltan]).font = { bold: true };
+  h.columns.forEach((c) => { c.width = 20; });
+  await enviarExcel(res, wb, `confronta_${fecha}.xlsx`);
 });
 
 // Tesorero/Admin: recargas realizadas

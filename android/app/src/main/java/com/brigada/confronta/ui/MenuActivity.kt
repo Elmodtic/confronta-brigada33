@@ -43,7 +43,7 @@ class MenuActivity : AppCompatActivity() {
         b.btnTesoreria.visibility = if (esTesorero) View.VISIBLE else View.GONE
         b.btnCanje.visibility = if (esRanchero) View.VISIBLE else View.GONE
         b.btnFondoRancho.visibility = if (esRanchero) View.VISIBLE else View.GONE
-        // Producción es solo consulta (cuántos platos cocinar), no una acción.
+        // La confronta del día es solo consulta (cuánto cocinar), no una acción.
         b.btnProduccion.visibility = if (esRanchero || esAdmin) View.VISIBLE else View.GONE
 
         val visAdmin = if (esAdmin) View.VISIBLE else View.GONE

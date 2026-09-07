@@ -8,6 +8,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.brigada.confronta.data.ApiClient
+import com.brigada.confronta.data.Avance
 import com.brigada.confronta.data.ProdUnidad
 import com.brigada.confronta.databinding.ActivityProduccionBinding
 import kotlinx.coroutines.launch
@@ -23,7 +24,7 @@ class ProduccionActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityProduccionBinding.inflate(layoutInflater)
         setContentView(b.root)
-        supportActionBar?.title = "Producción (rancho)"
+        supportActionBar?.title = "Confronta del día"
 
         b.btnDiaAnterior.setOnClickListener { fecha.add(Calendar.DAY_OF_MONTH, -1); cargar() }
         b.btnDiaSiguiente.setOnClickListener { fecha.add(Calendar.DAY_OF_MONTH, 1); cargar() }
@@ -37,7 +38,7 @@ class ProduccionActivity : AppCompatActivity() {
             try {
                 val resp = ApiClient.api.reporteProduccion(fechaIso())
                 if (resp.isSuccessful && resp.body() != null)
-                    guardarYAbrirXlsx(resp.body()!!, "produccion_${fechaIso()}.xlsx")
+                    guardarYAbrirXlsx(resp.body()!!, "confronta_${fechaIso()}.xlsx")
                 else toast(errorDeApi(resp))
             } catch (e: Exception) {
                 toast("No se pudo descargar.\n${e.message}")
@@ -58,10 +59,15 @@ class ProduccionActivity : AppCompatActivity() {
                 val resp = ApiClient.api.produccion(fechaIso())
                 if (resp.isSuccessful && resp.body() != null) {
                     val p = resp.body()!!
-                    b.tvDesayunos.text = p.desayunos.toString()
-                    b.tvAlmuerzos.text = p.almuerzos.toString()
-                    b.tvMeriendas.text = p.meriendas.toString()
-                    b.tvPersonas.text = "Personas registradas: ${p.personas}"
+                    pintarComida(b.tvDesayunos, b.tvDesayunosAvance, p.desayunos)
+                    pintarComida(b.tvAlmuerzos, b.tvAlmuerzosAvance, p.almuerzos)
+                    pintarComida(b.tvMeriendas, b.tvMeriendasAvance, p.meriendas)
+
+                    val pasaron = p.desayunos.pasaron + p.almuerzos.pasaron + p.meriendas.pasaron
+                    val faltan = p.desayunos.faltan + p.almuerzos.faltan + p.meriendas.faltan
+                    b.tvPersonas.text =
+                        "Personas en la confronta: ${p.personas}  ·  " +
+                        "$pasaron pasaron, $faltan faltan"
                     pintarUnidades(p.por_unidad)
                 } else {
                     toast(errorDeApi(resp))
@@ -73,6 +79,16 @@ class ProduccionActivity : AppCompatActivity() {
             }
         }
     }
+
+    /** Número grande = confronta; debajo, el avance de esa comida. */
+    private fun pintarComida(total: TextView, detalle: TextView, a: Avance) {
+        total.text = a.confronta.toString()
+        detalle.text = if (a.confronta == 0) "—" else "✓ ${a.pasaron}  ·  faltan ${a.faltan}"
+    }
+
+    /** Una línea por comida: confronta, cuántos pasaron y cuántos faltan. */
+    private fun lineaAvance(etiqueta: String, a: Avance): String =
+        "$etiqueta ${a.confronta}  (✓${a.pasaron} / faltan ${a.faltan})"
 
     private fun pintarUnidades(unidades: List<ProdUnidad>) {
         b.contenedorUnidades.removeAllViews()
@@ -89,8 +105,11 @@ class ProduccionActivity : AppCompatActivity() {
                 textSize = 14f
             }
             val der = TextView(this).apply {
-                text = "D:${u.desayunos}  A:${u.almuerzos}  M:${u.meriendas}"
-                textSize = 14f
+                text = listOf(
+                    lineaAvance("D", u.desayunos),
+                    lineaAvance("A", u.almuerzos),
+                    lineaAvance("M", u.meriendas)).joinToString("\n")
+                textSize = 13f
                 gravity = Gravity.END
                 setTextColor(getColor(com.brigada.confronta.R.color.verde_militar))
             }
