@@ -27,6 +27,11 @@ object Sesion {
         get() = prefs.getInt("id_personal", -1)
         set(v) = prefs.edit().putInt("id_personal", v).apply()
 
+    /** ¿La cuenta tiene verificacion en dos pasos activa? */
+    var totpActivado: Boolean
+        get() = prefs.getBoolean("totp_activado", false)
+        set(v) = prefs.edit().putBoolean("totp_activado", v).apply()
+
     /** Nombre para mostrar: "GRADO Apellidos Nombres" o, si no hay ficha, el usuario. */
     var nombre: String?
         get() = prefs.getString("nombre", null)
@@ -37,6 +42,7 @@ object Sesion {
         rol = login.rol
         username = login.username
         idPersonal = login.id_personal ?: -1
+        totpActivado = login.totp_activado
         nombre = if (login.apellidos != null)
             listOfNotNull(login.grado, login.apellidos, login.nombres).joinToString(" ")
         else login.username

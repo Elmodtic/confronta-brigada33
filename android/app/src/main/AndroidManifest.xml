@@ -39,6 +39,7 @@
         <activity android:name=".ui.KpisActivity" android:exported="false" />
         <activity android:name=".ui.TesoreriaActivity" android:exported="false" />
         <activity android:name=".ui.FondoRanchoActivity" android:exported="false" />
+        <activity android:name=".ui.SeguridadActivity" android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

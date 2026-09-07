@@ -3,15 +3,47 @@ package com.brigada.confronta.data
 // ---- Autenticación / cuentas ----
 data class LoginReq(val username: String, val password: String)
 
+/**
+ * Respuesta del login. Con verificacion en dos pasos activa el servidor
+ * NO manda `token`: manda `requiere_totp` y un `token_parcial` que solo
+ * sirve para el paso del codigo. Por eso los campos de sesion son
+ * anulables aunque en el caso normal siempre vengan.
+ */
 data class LoginResp(
-    val token: String,
-    val rol: String,
-    val username: String,
-    val id_usuario: Int,
+    val token: String?,
+    val rol: String?,
+    val username: String?,
+    val id_usuario: Int?,
     val id_personal: Int?,
     val grado: String?,
     val nombres: String?,
-    val apellidos: String?
+    val apellidos: String?,
+    val totp_activado: Boolean = false,
+    val requiere_totp: Boolean = false,
+    val token_parcial: String? = null,
+    val mensaje: String? = null
+)
+
+// ---- Verificacion en dos pasos (TOTP) ----
+data class LoginTotpReq(val token_parcial: String, val codigo: String)
+
+data class TotpEstado(
+    val activado: Boolean,
+    val activado_en: String?,
+    val codigos_respaldo_disponibles: Int
+)
+
+/** `uri` es el otpauth:// que se pinta como QR; `secreto` es el respaldo manual. */
+data class TotpInicio(val secreto: String, val uri: String)
+
+data class TotpCodigoReq(val codigo: String)
+
+data class TotpDesactivarReq(val password: String, val codigo: String)
+
+data class TotpRespaldoResp(
+    val ok: Boolean,
+    val codigos_respaldo: List<String>?,
+    val mensaje: String?
 )
 
 data class Kpis(
@@ -162,7 +194,8 @@ data class UsuarioAdmin(
     val grado: String?,
     val unidad: String?,
     val cedula: String? = null,
-    val saldo: Double = 0.0
+    val saldo: Double = 0.0,
+    val totp_activado: Boolean = false
 )
 
 data class UpdateUsuarioReq(val rol: String? = null, val activo: Boolean? = null)

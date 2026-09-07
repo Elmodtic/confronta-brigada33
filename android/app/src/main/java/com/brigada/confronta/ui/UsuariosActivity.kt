@@ -130,9 +130,13 @@ class UsuariosActivity : AppCompatActivity() {
         db.swActivo.isChecked = u.activo
 
         val nombre = listOfNotNull(u.nombres, u.apellidos).joinToString(" ")
-        AlertDialog.Builder(this)
+        val dialogo = AlertDialog.Builder(this)
             .setTitle(u.username)
-            .setMessage(if (nombre.isBlank()) null else nombre)
+            .setMessage(
+                listOfNotNull(
+                    nombre.ifBlank { null },
+                    if (u.totp_activado) "🔐 Verificación en dos pasos: activa" else null,
+                ).joinToString("\n").ifBlank { null })
             .setView(db.root)
             .setPositiveButton("Guardar") { _, _ ->
                 val nuevoRol = ROLES[db.spRol.selectedItemPosition]
@@ -141,7 +145,51 @@ class UsuariosActivity : AppCompatActivity() {
                 guardar(u, nuevoRol, nuevoActivo, nuevaClave)
             }
             .setNegativeButton("Cancelar", null)
+
+        // Solo aparece si hace falta: quitarle el segundo factor a quien no
+        // lo tiene no significa nada.
+        if (u.totp_activado) dialogo.setNeutralButton("Quitar 2 pasos", null)
+
+        dialogo.create().apply {
+            setOnShowListener {
+                getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener { confirmarResetTotp(u) }
+            }
+            show()
+        }
+    }
+
+    /**
+     * Salida de emergencia para quien perdió el teléfono Y sus códigos de
+     * respaldo. Deja la cuenta entrando solo con contraseña, así que se
+     * confirma aparte y queda en la auditoría.
+     */
+    private fun confirmarResetTotp(u: UsuarioAdmin) {
+        AlertDialog.Builder(this)
+            .setTitle("Quitar la verificación en dos pasos")
+            .setMessage(
+                "${u.username} volverá a entrar solo con su contraseña.\n\n" +
+                "Hazlo únicamente si confirmaste que es esa persona y que perdió " +
+                "el acceso a su app de autenticación. Pídele que la active de nuevo.")
+            .setPositiveButton("Quitar") { _, _ -> resetTotp(u) }
+            .setNegativeButton("Cancelar", null)
             .show()
+    }
+
+    private fun resetTotp(u: UsuarioAdmin) {
+        b.progreso.visibility = View.VISIBLE
+        lifecycleScope.launch {
+            try {
+                val r = ApiClient.api.totpReset(u.id_usuario)
+                if (r.isSuccessful) {
+                    toast("Se quitó la verificación en dos pasos a ${u.username}")
+                    buscar()
+                } else toast(errorDeApi(r))
+            } catch (e: Exception) {
+                toast("No se pudo conectar con el servidor.\n${e.message}")
+            } finally {
+                b.progreso.visibility = View.GONE
+            }
+        }
     }
 
     /**

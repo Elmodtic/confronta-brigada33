@@ -12,6 +12,7 @@ require('dotenv').config();
 
 const pool = require('./db');
 const { verificarToken, soloRol, revocarToken } = require('./auth');
+const totp = require('./totp');
 
 // ===============================================================
 // VALIDACIÓN DE ARRANQUE: el servidor NO inicia con un JWT_SECRET
@@ -35,6 +36,16 @@ if (SECRETOS_INSEGUROS.has(JWT_SECRET) || JWT_SECRET.length < 32) {
     '        Define en backend/.env un valor aleatorio de al menos 32 caracteres.\n' +
     '        Genera uno con:\n' +
     '        node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"\n');
+  process.exit(1);
+}
+
+// La llave que cifra los secretos TOTP se valida aquí y no al primer
+// uso: más vale no arrancar que descubrirlo cuando alguien intente
+// inscribir su segundo factor.
+try {
+  totp.comprobarConfiguracion();
+} catch (e) {
+  console.error(`\n[FATAL] ${e.message}\n`);
   process.exit(1);
 }
 
@@ -210,77 +221,166 @@ function idPersonalObjetivo(req, idPersonalPedido) {
 // AUTENTICACIÓN Y CUENTAS
 // ===============================================================
 
+// Trae al usuario con su grado y nombre para el saludo del login.
+async function usuarioParaLogin(campo, valor) {
+  const [rows] = await pool.query(`
+    SELECT u.*, p.nombres, p.apellidos, g.abreviatura AS grado
+    FROM usuario u
+    LEFT JOIN personal p ON u.id_personal = p.id_personal
+    LEFT JOIN grado g    ON p.id_grado    = g.id_grado
+    WHERE u.${campo} = ? AND u.activo = 1`, [valor]);
+  return rows[0] || null;
+}
+
+// ¿La cuenta está bloqueada ahora mismo? Devuelve los minutos que faltan.
+function minutosDeBloqueo(usuario, ahora) {
+  if (!usuario.bloqueado_hasta) return 0;
+  const hasta = new Date(usuario.bloqueado_hasta);
+  return hasta > ahora ? Math.ceil((hasta - ahora) / 60000) : 0;
+}
+
+/**
+ * Cuenta un intento fallido y responde. El mismo contador sirve para la
+ * contraseña y para el código de dos pasos: si no, el segundo factor
+ * quedaría abierto a fuerza bruta (un millón de combinaciones, pero solo
+ * seis dígitos y ventanas de 30 segundos).
+ */
+async function fallarIntento(usuario, ahora, res, mensajeBase) {
+  const intentos = (usuario.intentos_fallidos || 0) + 1;
+  if (intentos >= INTENTOS_MAX) {
+    const hasta = new Date(ahora.getTime() + BLOQUEO_MINUTOS * 60000);
+    await pool.query(
+      'UPDATE usuario SET intentos_fallidos = 0, bloqueado_hasta = ? WHERE id_usuario = ?',
+      [hasta, usuario.id_usuario]);
+    await auditar(usuario.id_usuario, 'BLOQUEO',
+      `Cuenta ${usuario.username} bloqueada ${BLOQUEO_MINUTOS} min`);
+    return res.status(423).json({
+      error: `Demasiados intentos. Cuenta bloqueada por ${BLOQUEO_MINUTOS} minutos.`,
+      reiniciar: true,
+    });
+  }
+  await pool.query('UPDATE usuario SET intentos_fallidos = ? WHERE id_usuario = ?',
+    [intentos, usuario.id_usuario]);
+  return res.status(401).json({
+    error: `${mensajeBase} Te quedan ${INTENTOS_MAX - intentos} intento(s).`,
+  });
+}
+
+// Sesión completa: se emite solo cuando ya se superaron todos los pasos.
+async function emitirSesion(usuario, res, detalleAuditoria) {
+  await pool.query(
+    'UPDATE usuario SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id_usuario = ?',
+    [usuario.id_usuario]);
+
+  const token = jwt.sign(
+    {
+      id_usuario: usuario.id_usuario,
+      username: usuario.username,
+      rol: usuario.rol,
+      id_personal: usuario.id_personal || null,
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: '15m', jwtid: crypto.randomUUID() });
+
+  await auditar(usuario.id_usuario, 'LOGIN', detalleAuditoria);
+  res.json({
+    token,
+    rol: usuario.rol,
+    username: usuario.username,
+    id_usuario: usuario.id_usuario,
+    id_personal: usuario.id_personal || null,
+    grado: usuario.grado || null,
+    nombres: usuario.nombres || null,
+    apellidos: usuario.apellidos || null,
+    totp_activado: !!usuario.totp_activado,
+  });
+}
+
 // --- Login (con bloqueo por intentos y saludo con grado/nombre) ---
 app.post('/api/login', limitadorAuth, async (req, res) => {
   const { username, password } = req.body;
   try {
-    const [rows] = await pool.query(`
-      SELECT u.*, p.nombres, p.apellidos, g.abreviatura AS grado
-      FROM usuario u
-      LEFT JOIN personal p ON u.id_personal = p.id_personal
-      LEFT JOIN grado g    ON p.id_grado    = g.id_grado
-      WHERE u.username = ? AND u.activo = 1`, [username]);
-    if (rows.length === 0)
+    const usuario = await usuarioParaLogin('username', username);
+    if (!usuario)
       return res.status(401).json({ error: 'Credenciales inválidas' });
 
-    const usuario = rows[0];
     const ahora = new Date();
-
-    // ¿Cuenta bloqueada temporalmente?
-    if (usuario.bloqueado_hasta && new Date(usuario.bloqueado_hasta) > ahora) {
-      const min = Math.ceil((new Date(usuario.bloqueado_hasta) - ahora) / 60000);
+    const bloqueo = minutosDeBloqueo(usuario, ahora);
+    if (bloqueo) {
       return res.status(423).json({
-        error: `Cuenta bloqueada por intentos fallidos. Intenta de nuevo en ${min} min.`,
+        error: `Cuenta bloqueada por intentos fallidos. Intenta de nuevo en ${bloqueo} min.`,
       });
     }
 
     const ok = await bcrypt.compare(password, usuario.password_hash);
-    if (!ok) {
-      const intentos = (usuario.intentos_fallidos || 0) + 1;
-      if (intentos >= INTENTOS_MAX) {
-        // Bloquea 10 min y reinicia el contador (al desbloquear tendrá 3 intentos)
-        const hasta = new Date(ahora.getTime() + BLOQUEO_MINUTOS * 60000);
-        await pool.query(
-          'UPDATE usuario SET intentos_fallidos = 0, bloqueado_hasta = ? WHERE id_usuario = ?',
-          [hasta, usuario.id_usuario]);
-        await auditar(usuario.id_usuario, 'BLOQUEO', `Cuenta ${username} bloqueada ${BLOQUEO_MINUTOS} min`);
-        return res.status(423).json({
-          error: `Demasiados intentos. Cuenta bloqueada por ${BLOQUEO_MINUTOS} minutos.`,
-        });
-      }
-      await pool.query('UPDATE usuario SET intentos_fallidos = ? WHERE id_usuario = ?',
-        [intentos, usuario.id_usuario]);
-      return res.status(401).json({
-        error: `Credenciales inválidas. Te quedan ${INTENTOS_MAX - intentos} intento(s).`,
+    if (!ok) return fallarIntento(usuario, ahora, res, 'Credenciales inválidas.');
+
+    // Con segundo factor activo la contraseña sola no abre sesión: se
+    // entrega un token parcial que únicamente sirve para el paso del
+    // código y caduca en cinco minutos.
+    if (usuario.totp_activado) {
+      const tokenParcial = jwt.sign(
+        { id_usuario: usuario.id_usuario, username: usuario.username, paso: 'TOTP' },
+        process.env.JWT_SECRET,
+        { expiresIn: '5m', jwtid: crypto.randomUUID() });
+      return res.json({
+        requiere_totp: true,
+        token_parcial: tokenParcial,
+        nombres: usuario.nombres || null,
+        mensaje: 'Ingresa el código de tu app de autenticación.',
       });
     }
 
-    // Login correcto: limpia intentos/bloqueo
-    await pool.query(
-      'UPDATE usuario SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id_usuario = ?',
-      [usuario.id_usuario]);
+    await emitirSesion(usuario, res, `Ingreso de ${username}`);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
 
-    const token = jwt.sign(
-      {
-        id_usuario: usuario.id_usuario,
-        username: usuario.username,
-        rol: usuario.rol,
-        id_personal: usuario.id_personal || null,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '15m', jwtid: crypto.randomUUID() });
+// --- Segundo paso: código de la app de autenticación o de respaldo ---
+app.post('/api/login/totp', limitadorAuth, async (req, res) => {
+  const { token_parcial, codigo } = req.body;
+  if (!token_parcial || !codigo)
+    return res.status(400).json({ error: 'Falta el código' });
 
-    await auditar(usuario.id_usuario, 'LOGIN', `Ingreso de ${username}`);
-    res.json({
-      token,
-      rol: usuario.rol,
-      username: usuario.username,
-      id_usuario: usuario.id_usuario,
-      id_personal: usuario.id_personal || null,
-      grado: usuario.grado || null,
-      nombres: usuario.nombres || null,
-      apellidos: usuario.apellidos || null,
-    });
+  let parcial;
+  try {
+    parcial = jwt.verify(String(token_parcial), process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'La verificación expiró. Ingresa tu contraseña de nuevo.', reiniciar: true });
+  }
+  if (parcial.paso !== 'TOTP')
+    return res.status(401).json({ error: 'Token inválido para este paso', reiniciar: true });
+
+  try {
+    const usuario = await usuarioParaLogin('id_usuario', parcial.id_usuario);
+    if (!usuario || !usuario.totp_activado)
+      return res.status(401).json({ error: 'La cuenta ya no tiene verificación en dos pasos', reiniciar: true });
+
+    const ahora = new Date();
+    const bloqueo = minutosDeBloqueo(usuario, ahora);
+    if (bloqueo)
+      return res.status(423).json({ error: `Cuenta bloqueada. Intenta de nuevo en ${bloqueo} min.`, reiniciar: true });
+
+    // Un código de respaldo se reconoce por su forma (XXXX-XXXX) y se
+    // consume; si no lo es, se valida como código de seis dígitos.
+    if (totp.pareceCodigoRespaldo(codigo)) {
+      const usado = await consumirCodigoRespaldo(usuario.id_usuario, codigo);
+      if (!usado) return fallarIntento(usuario, ahora, res, 'Código de respaldo inválido o ya usado.');
+      await auditar(usuario.id_usuario, 'TOTP_RESPALDO',
+        `${usuario.username} entró con un código de respaldo`);
+      return emitirSesion(usuario, res, `Ingreso de ${usuario.username} (código de respaldo)`);
+    }
+
+    const r = await totp.verificarCodigo(usuario.totp_secreto, codigo, usuario.totp_ultimo_paso);
+    if (!r.valido) return fallarIntento(usuario, ahora, res, 'Código incorrecto.');
+
+    // Se anota el paso usado para que ese mismo código no sirva otra vez.
+    await pool.query('UPDATE usuario SET totp_ultimo_paso = ? WHERE id_usuario = ?',
+      [r.paso, usuario.id_usuario]);
+
+    await emitirSesion(usuario, res, `Ingreso de ${usuario.username} (dos pasos)`);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error del servidor' });
@@ -292,6 +392,197 @@ app.post('/api/logout', verificarToken, async (req, res) => {
   revocarToken(req.usuario);
   await auditar(req.usuario.id_usuario, 'LOGOUT', `Cierre de sesión de ${req.usuario.username}`);
   res.json({ ok: true });
+});
+
+// ===============================================================
+// VERIFICACIÓN EN DOS PASOS (TOTP)
+//
+// Inscripción: el servidor genera un secreto, el teléfono lo muestra
+// como QR, el usuario lo escanea con Google Authenticator y confirma
+// con un código. Recién ahí queda activo, para que nadie se bloquee a
+// sí mismo por haber guardado mal el secreto.
+// ===============================================================
+
+// Marca como usado el código de respaldo si coincide con alguno vigente.
+// Se comparan todos porque están hasheados y no se pueden buscar.
+async function consumirCodigoRespaldo(idUsuario, codigo) {
+  const limpio = totp.normalizarRespaldo(codigo);
+  const [filas] = await pool.query(
+    'SELECT id_codigo, codigo_hash FROM codigo_respaldo WHERE id_usuario = ? AND usado_en IS NULL',
+    [idUsuario]);
+  for (const f of filas) {
+    if (await bcrypt.compare(limpio, f.codigo_hash)) {
+      const [r] = await pool.query(
+        'UPDATE codigo_respaldo SET usado_en = NOW() WHERE id_codigo = ? AND usado_en IS NULL',
+        [f.id_codigo]);
+      // Si otra petición lo consumió primero, affectedRows llega en 0.
+      return r.affectedRows === 1;
+    }
+  }
+  return false;
+}
+
+async function reemplazarCodigosRespaldo(idUsuario) {
+  const { codigos, hashes } = await totp.generarCodigosRespaldo();
+  await pool.query('DELETE FROM codigo_respaldo WHERE id_usuario = ?', [idUsuario]);
+  await pool.query(
+    'INSERT INTO codigo_respaldo (id_usuario, codigo_hash) VALUES ?',
+    [hashes.map((h) => [idUsuario, h])]);
+  return codigos;
+}
+
+// --- Estado del segundo factor de la cuenta ---
+app.get('/api/mi/totp', verificarToken, async (req, res) => {
+  try {
+    const [[u]] = await pool.query(
+      'SELECT totp_activado, totp_activado_en FROM usuario WHERE id_usuario = ?',
+      [req.usuario.id_usuario]);
+    const [[c]] = await pool.query(
+      'SELECT COUNT(*) AS n FROM codigo_respaldo WHERE id_usuario = ? AND usado_en IS NULL',
+      [req.usuario.id_usuario]);
+    res.json({
+      activado: !!u.totp_activado,
+      activado_en: u.totp_activado_en,
+      codigos_respaldo_disponibles: Number(c.n),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al consultar el segundo factor' });
+  }
+});
+
+// --- Paso 1: generar el secreto y el QR de inscripción ---
+app.post('/api/mi/totp/iniciar', verificarToken, async (req, res) => {
+  try {
+    const [[u]] = await pool.query('SELECT totp_activado FROM usuario WHERE id_usuario = ?',
+      [req.usuario.id_usuario]);
+    if (u.totp_activado)
+      return res.status(409).json({ error: 'Ya tienes la verificación en dos pasos activa' });
+
+    const secreto = await totp.nuevoSecreto();
+    // Se guarda cifrado pero SIN activar: hasta que no confirme un
+    // código, la cuenta sigue entrando solo con contraseña.
+    await pool.query('UPDATE usuario SET totp_secreto = ?, totp_ultimo_paso = NULL WHERE id_usuario = ?',
+      [totp.cifrar(secreto), req.usuario.id_usuario]);
+
+    res.json({
+      secreto,                                   // por si no puede escanear
+      uri: await totp.uriDeInscripcion(secreto, req.usuario.username),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al iniciar la inscripción' });
+  }
+});
+
+// --- Paso 2: confirmar con un código y activar ---
+app.post('/api/mi/totp/activar', verificarToken, async (req, res) => {
+  try {
+    const [[u]] = await pool.query(
+      'SELECT totp_secreto, totp_activado FROM usuario WHERE id_usuario = ?',
+      [req.usuario.id_usuario]);
+    if (u.totp_activado)
+      return res.status(409).json({ error: 'Ya está activa' });
+    if (!u.totp_secreto)
+      return res.status(400).json({ error: 'Primero genera el código QR' });
+
+    const r = await totp.verificarCodigo(u.totp_secreto, req.body.codigo, null);
+    if (!r.valido)
+      return res.status(401).json({ error: 'El código no coincide. Revisa la hora de tu teléfono.' });
+
+    await pool.query(
+      'UPDATE usuario SET totp_activado = 1, totp_activado_en = NOW(), totp_ultimo_paso = ? WHERE id_usuario = ?',
+      [r.paso, req.usuario.id_usuario]);
+    const codigos = await reemplazarCodigosRespaldo(req.usuario.id_usuario);
+
+    await auditar(req.usuario.id_usuario, 'TOTP_ACTIVAR',
+      `${req.usuario.username} activó la verificación en dos pasos`);
+    res.json({
+      ok: true,
+      codigos_respaldo: codigos,
+      mensaje: 'Guarda estos códigos. Son la única forma de entrar si pierdes el teléfono.',
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al activar la verificación' });
+  }
+});
+
+// --- Nuevos códigos de respaldo (invalida los anteriores) ---
+app.post('/api/mi/totp/respaldo', verificarToken, async (req, res) => {
+  try {
+    const [[u]] = await pool.query(
+      'SELECT totp_secreto, totp_activado, totp_ultimo_paso FROM usuario WHERE id_usuario = ?',
+      [req.usuario.id_usuario]);
+    if (!u.totp_activado)
+      return res.status(400).json({ error: 'No tienes la verificación en dos pasos activa' });
+
+    // Se exige un código vigente: si alguien deja el teléfono abierto,
+    // que al menos no pueda llevarse códigos de respaldo nuevos.
+    const r = await totp.verificarCodigo(u.totp_secreto, req.body.codigo, u.totp_ultimo_paso);
+    if (!r.valido) return res.status(401).json({ error: 'Código incorrecto' });
+    await pool.query('UPDATE usuario SET totp_ultimo_paso = ? WHERE id_usuario = ?',
+      [r.paso, req.usuario.id_usuario]);
+
+    const codigos = await reemplazarCodigosRespaldo(req.usuario.id_usuario);
+    await auditar(req.usuario.id_usuario, 'TOTP_RESPALDO_NUEVO',
+      `${req.usuario.username} regeneró sus códigos de respaldo`);
+    res.json({ ok: true, codigos_respaldo: codigos });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al generar los códigos' });
+  }
+});
+
+// --- Desactivar (pide contraseña Y código: son dos factores otra vez) ---
+app.post('/api/mi/totp/desactivar', verificarToken, async (req, res) => {
+  try {
+    const [[u]] = await pool.query(
+      'SELECT username, password_hash, totp_secreto, totp_activado, totp_ultimo_paso FROM usuario WHERE id_usuario = ?',
+      [req.usuario.id_usuario]);
+    if (!u.totp_activado) return res.json({ ok: true });
+
+    const claveOk = await bcrypt.compare(String(req.body.password || ''), u.password_hash);
+    if (!claveOk) return res.status(401).json({ error: 'Contraseña incorrecta' });
+
+    const r = await totp.verificarCodigo(u.totp_secreto, req.body.codigo, u.totp_ultimo_paso);
+    if (!r.valido) return res.status(401).json({ error: 'Código incorrecto' });
+
+    await pool.query(
+      `UPDATE usuario SET totp_secreto = NULL, totp_activado = 0,
+              totp_activado_en = NULL, totp_ultimo_paso = NULL
+       WHERE id_usuario = ?`, [req.usuario.id_usuario]);
+    await pool.query('DELETE FROM codigo_respaldo WHERE id_usuario = ?', [req.usuario.id_usuario]);
+
+    await auditar(req.usuario.id_usuario, 'TOTP_DESACTIVAR',
+      `${u.username} desactivó la verificación en dos pasos`);
+    res.json({ ok: true, mensaje: 'Verificación en dos pasos desactivada.' });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al desactivar' });
+  }
+});
+
+// --- El ADMIN la quita a quien perdió el teléfono y los códigos ---
+app.post('/api/usuarios/:id/totp/reset', verificarToken, soloRol('ADMIN'), async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const [[u]] = await pool.query('SELECT username FROM usuario WHERE id_usuario = ?', [id]);
+    if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    await pool.query(
+      `UPDATE usuario SET totp_secreto = NULL, totp_activado = 0,
+              totp_activado_en = NULL, totp_ultimo_paso = NULL
+       WHERE id_usuario = ?`, [id]);
+    await pool.query('DELETE FROM codigo_respaldo WHERE id_usuario = ?', [id]);
+
+    await auditar(req.usuario.id_usuario, 'TOTP_RESET',
+      `Quitó la verificación en dos pasos a ${u.username}`);
+    res.json({ ok: true, mensaje: `${u.username} vuelve a entrar solo con contraseña. Pídele que la active de nuevo.` });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al restablecer el segundo factor' });
+  }
 });
 
 // --- Registro de un nuevo usuario (crea ficha de personal + cuenta) ---
@@ -977,6 +1268,7 @@ app.get('/api/usuarios', verificarToken, soloRol('ADMIN'), async (req, res) => {
 
   const [rows] = await pool.query(`
     SELECT us.id_usuario, us.username, us.rol, us.activo, us.saldo,
+           us.totp_activado,
            p.cedula, p.nombres, p.apellidos,
            g.abreviatura AS grado, u.siglas AS unidad
     FROM usuario us
@@ -995,6 +1287,7 @@ app.get('/api/usuarios', verificarToken, soloRol('ADMIN'), async (req, res) => {
     buscar,
     usuarios: rows.map((r) => ({
       ...r, activo: !!r.activo, saldo: Number(r.saldo || 0),
+      totp_activado: !!r.totp_activado,
     })),
   });
 });

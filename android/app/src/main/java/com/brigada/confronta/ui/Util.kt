@@ -103,7 +103,17 @@ fun fechaHora(iso: String?): String {
  * golpe todo lo que hace falta en vez de tener varias funciones que lo
  * consuman por separado.
  */
-data class ErrorApi(val mensaje: String, val cargoOcupado: Boolean)
+/**
+ * Detalle de un error de la API.
+ *  - `cargoOcupado`: el rol unico ya tiene titular y se puede ofrecer relevo.
+ *  - `reiniciar`: el paso en curso ya no sirve (token parcial caducado,
+ *    cuenta bloqueada) y hay que empezar el ingreso otra vez.
+ */
+data class ErrorApi(
+    val mensaje: String,
+    val cargoOcupado: Boolean,
+    val reiniciar: Boolean = false,
+)
 
 fun detalleError(resp: Response<*>): ErrorApi {
     return try {
@@ -113,7 +123,8 @@ fun detalleError(resp: Response<*>): ErrorApi {
             val map = Gson().fromJson(raw, Map::class.java)
             ErrorApi(
                 (map["error"] as? String) ?: "Error ${resp.code()}",
-                (map["cargo_ocupado"] as? Boolean) == true)
+                (map["cargo_ocupado"] as? Boolean) == true,
+                (map["reiniciar"] as? Boolean) == true)
         }
     } catch (e: Exception) {
         ErrorApi("Error ${resp.code()}", false)

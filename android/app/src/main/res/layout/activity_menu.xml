@@ -165,6 +165,28 @@
             android:textSize="15sp" app:cornerRadius="12dp"
             android:visibility="gone" />
 
+        <!-- Seguridad de la cuenta: para todos los roles -->
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Mi cuenta" android:textStyle="bold"
+            android:textColor="@color/verde_militar_oscuro"
+            android:layout_marginTop="22dp" android:layout_marginBottom="6dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSeguridad"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:paddingVertical="16dp"
+            android:text="🔐  Verificación en dos pasos"
+            android:textSize="15sp" app:cornerRadius="12dp" />
+
+        <TextView
+            android:id="@+id/tvAvisoTotp"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Actívala para que tu contraseña no baste por sí sola."
+            android:textColor="@color/gris_texto" android:textSize="12sp"
+            android:layout_marginTop="4dp" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnCerrar"
             style="@style/Widget.Material3.Button.TextButton"

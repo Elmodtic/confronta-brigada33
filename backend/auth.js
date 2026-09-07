@@ -38,6 +38,13 @@ function verificarToken(req, res, next) {
     if (usuario.jti && tokensRevocados.has(usuario.jti)) {
       return res.status(401).json({ error: 'Sesión finalizada. Inicia sesión de nuevo.' });
     }
+    // El token parcial que se entrega entre la contraseña y el código de
+    // seis dígitos lleva `paso` y NO vale como sesión: sin esto, quien
+    // sepa la contraseña se saltaría el segundo factor simplemente
+    // usando ese token contra el resto de la API.
+    if (usuario.paso) {
+      return res.status(401).json({ error: 'Falta completar la verificación en dos pasos' });
+    }
     req.usuario = usuario; // { id_usuario, username, rol, id_personal, jti, iat, exp }
     next();
   });

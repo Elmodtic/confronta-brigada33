@@ -19,9 +19,33 @@ interface Api {
     @POST("api/registro")
     suspend fun registro(@Body body: RegistroReq): Response<RegistroResp>
 
+    // Segundo paso: el codigo de seis digitos (o uno de respaldo).
+    @POST("api/login/totp")
+    suspend fun loginTotp(@Body body: LoginTotpReq): Response<LoginResp>
+
     // Invalida el token actual en el servidor (lista negra en memoria).
     @POST("api/logout")
     suspend fun logout(): Response<OkResp>
+
+    // ---- Verificacion en dos pasos ----
+    @GET("api/mi/totp")
+    suspend fun totpEstado(): Response<TotpEstado>
+
+    @POST("api/mi/totp/iniciar")
+    suspend fun totpIniciar(): Response<TotpInicio>
+
+    @POST("api/mi/totp/activar")
+    suspend fun totpActivar(@Body body: TotpCodigoReq): Response<TotpRespaldoResp>
+
+    @POST("api/mi/totp/respaldo")
+    suspend fun totpNuevosRespaldos(@Body body: TotpCodigoReq): Response<TotpRespaldoResp>
+
+    @POST("api/mi/totp/desactivar")
+    suspend fun totpDesactivar(@Body body: TotpDesactivarReq): Response<OkResp>
+
+    // El ADMIN se lo quita a quien perdio el telefono.
+    @POST("api/usuarios/{id}/totp/reset")
+    suspend fun totpReset(@Path("id") id: Int): Response<OkResp>
 
     @GET("api/olvido/pregunta")
     suspend fun pregunta(@Query("username") username: String): Response<PreguntaResp>

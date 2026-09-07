@@ -65,12 +65,15 @@ class MenuActivity : AppCompatActivity() {
         b.btnAuditoria.setOnClickListener { abrir(AuditoriaActivity::class.java) }
         b.btnTarifa.setOnClickListener { abrir(TarifaActivity::class.java) }
         b.btnKpis.setOnClickListener { abrir(KpisActivity::class.java) }
+        b.btnSeguridad.setOnClickListener { abrir(SeguridadActivity::class.java) }
         b.btnCerrar.setOnClickListener { cerrarSesion() }
     }
 
     override fun onResume() {
         super.onResume()
         cargarSaldoYTarifa()   // refresca el saldo al volver de otras pantallas
+        // El aviso solo tiene sentido para quien todavía no la activó.
+        b.tvAvisoTotp.visibility = if (Sesion.totpActivado) View.GONE else View.VISIBLE
     }
 
     private fun cargarSaldoYTarifa() {
