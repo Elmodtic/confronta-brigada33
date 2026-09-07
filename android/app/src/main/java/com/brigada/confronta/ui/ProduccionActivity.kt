@@ -8,7 +8,6 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.brigada.confronta.data.ApiClient
-import com.brigada.confronta.data.Avance
 import com.brigada.confronta.data.ProdUnidad
 import com.brigada.confronta.databinding.ActivityProduccionBinding
 import kotlinx.coroutines.launch
@@ -59,15 +58,22 @@ class ProduccionActivity : AppCompatActivity() {
                 val resp = ApiClient.api.produccion(fechaIso())
                 if (resp.isSuccessful && resp.body() != null) {
                     val p = resp.body()!!
-                    pintarComida(b.tvDesayunos, b.tvDesayunosAvance, p.desayunos)
-                    pintarComida(b.tvAlmuerzos, b.tvAlmuerzosAvance, p.almuerzos)
-                    pintarComida(b.tvMeriendas, b.tvMeriendasAvance, p.meriendas)
 
-                    val pasaron = p.desayunos.pasaron + p.almuerzos.pasaron + p.meriendas.pasaron
-                    val faltan = p.desayunos.faltan + p.almuerzos.faltan + p.meriendas.faltan
-                    b.tvPersonas.text =
-                        "Personas en la confronta: ${p.personas}  ·  " +
-                        "$pasaron pasaron, $faltan faltan"
+                    // Cada sección lee la misma cifra de las tres comidas, así
+                    // se comparan en vertical: preparar / pasaron / faltan.
+                    b.tvDesayunos.text = p.desayunos.confronta.toString()
+                    b.tvAlmuerzos.text = p.almuerzos.confronta.toString()
+                    b.tvMeriendas.text = p.meriendas.confronta.toString()
+
+                    b.tvDesayunosPasaron.text = p.desayunos.pasaron.toString()
+                    b.tvAlmuerzosPasaron.text = p.almuerzos.pasaron.toString()
+                    b.tvMeriendasPasaron.text = p.meriendas.pasaron.toString()
+
+                    b.tvDesayunosFaltan.text = p.desayunos.faltan.toString()
+                    b.tvAlmuerzosFaltan.text = p.almuerzos.faltan.toString()
+                    b.tvMeriendasFaltan.text = p.meriendas.faltan.toString()
+
+                    b.tvPersonas.text = "Personas en la confronta: ${p.personas}"
                     pintarUnidades(p.por_unidad)
                 } else {
                     toast(errorDeApi(resp))
@@ -80,41 +86,41 @@ class ProduccionActivity : AppCompatActivity() {
         }
     }
 
-    /** Número grande = confronta; debajo, el avance de esa comida. */
-    private fun pintarComida(total: TextView, detalle: TextView, a: Avance) {
-        total.text = a.confronta.toString()
-        detalle.text = if (a.confronta == 0) "—" else "✓ ${a.pasaron}  ·  faltan ${a.faltan}"
+    /** Celda numérica de la tabla; su ancho debe coincidir con el encabezado. */
+    private fun celda(valor: Int): TextView = TextView(this).apply {
+        layoutParams = LinearLayout.LayoutParams(dp(44), LinearLayout.LayoutParams.WRAP_CONTENT)
+        text = valor.toString()
+        textSize = 15f
+        gravity = Gravity.CENTER
+        setTextColor(getColor(com.brigada.confronta.R.color.verde_militar))
     }
 
-    /** Una línea por comida: confronta, cuántos pasaron y cuántos faltan. */
-    private fun lineaAvance(etiqueta: String, a: Avance): String =
-        "$etiqueta ${a.confronta}  (✓${a.pasaron} / faltan ${a.faltan})"
+    private fun dp(valor: Int): Int = (valor * resources.displayMetrics.density).toInt()
 
+    /**
+     * Tabla de unidades: solo la confronta a preparar. El detalle de quién
+     * pasó y quién falta ya está arriba, en las dos secciones grandes, y
+     * repetirlo aquí volvía la lista ilegible.
+     */
     private fun pintarUnidades(unidades: List<ProdUnidad>) {
         b.contenedorUnidades.removeAllViews()
         b.tvVacio.visibility = if (unidades.isEmpty()) View.VISIBLE else View.GONE
         for (u in unidades) {
             val fila = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(16, 20, 16, 20)
+                setPadding(dp(4), dp(12), dp(4), dp(12))
                 gravity = Gravity.CENTER_VERTICAL
             }
             val izq = TextView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                text = "${u.siglas ?: u.unidad}\n${u.unidad}"
+                text = u.siglas ?: u.unidad
                 textSize = 14f
-            }
-            val der = TextView(this).apply {
-                text = listOf(
-                    lineaAvance("D", u.desayunos),
-                    lineaAvance("A", u.almuerzos),
-                    lineaAvance("M", u.meriendas)).joinToString("\n")
-                textSize = 13f
-                gravity = Gravity.END
-                setTextColor(getColor(com.brigada.confronta.R.color.verde_militar))
+                setTextColor(getColor(com.brigada.confronta.R.color.texto_principal))
             }
             fila.addView(izq)
-            fila.addView(der)
+            fila.addView(celda(u.desayunos.confronta))
+            fila.addView(celda(u.almuerzos.confronta))
+            fila.addView(celda(u.meriendas.confronta))
             b.contenedorUnidades.addView(fila)
 
             val linea = View(this).apply {

@@ -34,19 +34,13 @@
                 android:text="▶" android:minWidth="48dp" />
         </LinearLayout>
 
+        <!-- ===================== 1. CONFRONTA A PREPARAR ===================== -->
         <TextView
             android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Confronta a preparar" android:textStyle="bold"
             android:textColor="@color/verde_militar_oscuro" android:textSize="16sp"
-            android:layout_marginTop="12dp" />
+            android:layout_marginTop="16dp" />
 
-        <TextView
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="El número grande es la confronta del día. Debajo, cuántos ya pasaron a comer y cuántos faltan."
-            android:textColor="@color/gris_texto" android:textSize="12sp"
-            android:layout_marginTop="2dp" />
-
-        <!-- Totales grandes -->
         <LinearLayout
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="horizontal" android:layout_marginTop="8dp">
@@ -63,10 +57,6 @@
                         android:textColor="@color/blanco" android:textSize="30sp" android:textStyle="bold" />
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                         android:text="Desayunos" android:textColor="@color/blanco" android:textSize="12sp" />
-                    <TextView android:id="@+id/tvDesayunosAvance"
-                        android:layout_width="wrap_content" android:layout_height="wrap_content"
-                        android:text="—" android:textColor="@color/blanco" android:textSize="12sp"
-                        android:gravity="center" android:layout_marginTop="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -82,10 +72,6 @@
                         android:textColor="@color/blanco" android:textSize="30sp" android:textStyle="bold" />
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                         android:text="Almuerzos" android:textColor="@color/blanco" android:textSize="12sp" />
-                    <TextView android:id="@+id/tvAlmuerzosAvance"
-                        android:layout_width="wrap_content" android:layout_height="wrap_content"
-                        android:text="—" android:textColor="@color/blanco" android:textSize="12sp"
-                        android:gravity="center" android:layout_marginTop="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -101,10 +87,131 @@
                         android:textColor="@color/blanco" android:textSize="30sp" android:textStyle="bold" />
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                         android:text="Meriendas" android:textColor="@color/blanco" android:textSize="12sp" />
-                    <TextView android:id="@+id/tvMeriendasAvance"
-                        android:layout_width="wrap_content" android:layout_height="wrap_content"
-                        android:text="—" android:textColor="@color/blanco" android:textSize="12sp"
-                        android:gravity="center" android:layout_marginTop="4dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+
+        <!-- ===================== 2. YA PASARON ===================== -->
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Ya pasaron a comer" android:textStyle="bold"
+            android:textColor="@color/verde_militar_oscuro" android:textSize="16sp"
+            android:layout_marginTop="22dp" />
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Se suma solo cuando canjeas su QR."
+            android:textColor="@color/gris_texto" android:textSize="12sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginTop="8dp">
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:layout_marginEnd="6dp"
+                app:cardCornerRadius="14dp" app:cardElevation="2dp"
+                app:cardBackgroundColor="@color/dorado">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="12dp" android:gravity="center">
+                    <TextView android:id="@+id/tvDesayunosPasaron" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:text="0"
+                        android:textColor="@color/blanco" android:textSize="30sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Desayunos" android:textColor="@color/blanco" android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:layout_marginHorizontal="3dp"
+                app:cardCornerRadius="14dp" app:cardElevation="2dp"
+                app:cardBackgroundColor="@color/dorado">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="12dp" android:gravity="center">
+                    <TextView android:id="@+id/tvAlmuerzosPasaron" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:text="0"
+                        android:textColor="@color/blanco" android:textSize="30sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Almuerzos" android:textColor="@color/blanco" android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:layout_marginStart="6dp"
+                app:cardCornerRadius="14dp" app:cardElevation="2dp"
+                app:cardBackgroundColor="@color/dorado">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="12dp" android:gravity="center">
+                    <TextView android:id="@+id/tvMeriendasPasaron" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:text="0"
+                        android:textColor="@color/blanco" android:textSize="30sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Meriendas" android:textColor="@color/blanco" android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+
+        <!-- ===================== 3. FALTAN POR PASAR ===================== -->
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Faltan por pasar" android:textStyle="bold"
+            android:textColor="@color/verde_militar_oscuro" android:textSize="16sp"
+            android:layout_marginTop="22dp" />
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Raciones reservadas que todavía no se retiran."
+            android:textColor="@color/gris_texto" android:textSize="12sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginTop="8dp">
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:layout_marginEnd="6dp"
+                app:cardCornerRadius="14dp" app:cardElevation="0dp"
+                app:strokeColor="@color/verde_militar" app:strokeWidth="2dp"
+                app:cardBackgroundColor="@color/superficie">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="12dp" android:gravity="center">
+                    <TextView android:id="@+id/tvDesayunosFaltan" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:text="0"
+                        android:textColor="@color/verde_militar" android:textSize="30sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Desayunos" android:textColor="@color/texto_secundario" android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:layout_marginHorizontal="3dp"
+                app:cardCornerRadius="14dp" app:cardElevation="0dp"
+                app:strokeColor="@color/verde_militar" app:strokeWidth="2dp"
+                app:cardBackgroundColor="@color/superficie">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="12dp" android:gravity="center">
+                    <TextView android:id="@+id/tvAlmuerzosFaltan" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:text="0"
+                        android:textColor="@color/verde_militar" android:textSize="30sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Almuerzos" android:textColor="@color/texto_secundario" android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:layout_marginStart="6dp"
+                app:cardCornerRadius="14dp" app:cardElevation="0dp"
+                app:strokeColor="@color/verde_militar" app:strokeWidth="2dp"
+                app:cardBackgroundColor="@color/superficie">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="12dp" android:gravity="center">
+                    <TextView android:id="@+id/tvMeriendasFaltan" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:text="0"
+                        android:textColor="@color/verde_militar" android:textSize="30sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Meriendas" android:textColor="@color/texto_secundario" android:textSize="12sp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
@@ -112,14 +219,46 @@
         <TextView
             android:id="@+id/tvPersonas"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Personas registradas: 0" android:gravity="center"
-            android:textColor="@color/gris_texto" android:layout_marginTop="10dp" />
+            android:text="Personas en la confronta: 0" android:gravity="center"
+            android:textColor="@color/gris_texto" android:layout_marginTop="18dp" />
 
+        <!-- ===================== DESGLOSE POR UNIDAD ===================== -->
         <TextView
             android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Desglose por unidad" android:textStyle="bold"
-            android:textColor="@color/verde_militar_oscuro"
-            android:layout_marginTop="18dp" android:layout_marginBottom="4dp" />
+            android:textColor="@color/verde_militar_oscuro" android:textSize="16sp"
+            android:layout_marginTop="22dp" />
+
+        <!-- Encabezado de la tabla: evita repetir "D:" "A:" "M:" en cada fila -->
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:paddingHorizontal="4dp"
+            android:paddingTop="10dp" android:paddingBottom="6dp">
+            <TextView
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="Unidad"
+                android:textSize="12sp" android:textStyle="bold"
+                android:textColor="@color/texto_secundario" />
+            <TextView
+                android:layout_width="44dp" android:layout_height="wrap_content"
+                android:text="Des" android:gravity="center"
+                android:textSize="12sp" android:textStyle="bold"
+                android:textColor="@color/texto_secundario" />
+            <TextView
+                android:layout_width="44dp" android:layout_height="wrap_content"
+                android:text="Alm" android:gravity="center"
+                android:textSize="12sp" android:textStyle="bold"
+                android:textColor="@color/texto_secundario" />
+            <TextView
+                android:layout_width="44dp" android:layout_height="wrap_content"
+                android:text="Mer" android:gravity="center"
+                android:textSize="12sp" android:textStyle="bold"
+                android:textColor="@color/texto_secundario" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent" android:layout_height="1dp"
+            android:background="#E0E0E0" />
 
         <LinearLayout
             android:id="@+id/contenedorUnidades"
@@ -137,7 +276,7 @@
             android:id="@+id/btnExcel"
             style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
+            android:layout_marginTop="18dp"
             android:text="📊  Exportar a Excel" />
 
         <ProgressBar
