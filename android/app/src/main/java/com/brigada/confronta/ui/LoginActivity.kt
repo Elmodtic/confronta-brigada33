@@ -202,15 +202,19 @@ class LoginActivity : AppCompatActivity() {
      * se limita a números.
      */
     private fun pedirCodigo(tokenParcial: String, usuario: String, pass: String, guardar: Boolean) {
+        // Sin códigos de respaldo, aquí solo entran seis dígitos: el
+        // teclado numérico evita errores de tipeo.
         val campo = EditText(this).apply {
             hint = "Código de 6 dígitos"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(android.text.InputFilter.LengthFilter(6))
             setPadding(50, 40, 50, 40)
         }
         AlertDialog.Builder(this)
             .setTitle("Verificación en dos pasos")
             .setMessage(
                 "Abre tu app de autenticación y escribe el código de 6 dígitos.\n\n" +
-                "Si perdiste el teléfono, puedes usar uno de tus códigos de respaldo.")
+                "Si perdiste el teléfono, pide al administrador de la unidad que reinicie tu cuenta.")
             .setView(campo)
             .setCancelable(false)
             .setPositiveButton("Verificar", null)   // se enlaza abajo
