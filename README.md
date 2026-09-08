@@ -8,6 +8,10 @@ Excel y panel de KPIs. Roles: **ADMIN, TESORERO, RANCHERO, OPERADOR, CONSULTA**.
 Documentación técnica ampliada: [docs/CONTEXTO_TECNICO.md](docs/CONTEXTO_TECNICO.md)
 y [docs/GUIA_ARRANQUE.md](docs/GUIA_ARRANQUE.md).
 
+Para dejar el servidor publicado y accesible desde cualquier red —túnel,
+certificado, cortafuegos y cómo la app encuentra la dirección vigente—
+ver [docs/PUBLICAR_SERVIDOR.md](docs/PUBLICAR_SERVIDOR.md).
+
 ## Arquitectura
 
 ```

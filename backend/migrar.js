@@ -162,6 +162,61 @@ const DB = process.env.DB_NAME;
       FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
     ) ENGINE=InnoDB`);
 
+  // --- Tesorería: entregas de dinero al rancho, confirmadas por QR ---
+  // La caja del tesorero solo baja cuando el ranchero confirma la
+  // recepción escaneando el código; por eso el estado y el token.
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS transferencia (
+      id_transferencia INT AUTO_INCREMENT PRIMARY KEY,
+      id_tesorero   INT NOT NULL,
+      id_ranchero   INT NOT NULL,
+      monto         DECIMAL(10,2) NOT NULL,
+      concepto      VARCHAR(255) DEFAULT NULL,
+      token         CHAR(32) DEFAULT NULL,
+      estado        ENUM('PENDIENTE','CONFIRMADA','ANULADA') NOT NULL DEFAULT 'PENDIENTE',
+      confirmado_en DATETIME DEFAULT NULL,
+      anulado_en    DATETIME DEFAULT NULL,
+      fecha_hora    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_transferencia_token (token),
+      INDEX idx_transf_fecha (fecha_hora),
+      INDEX idx_transf_ranchero (id_ranchero),
+      INDEX idx_transf_estado (estado),
+      CONSTRAINT fk_transf_tesorero FOREIGN KEY (id_tesorero) REFERENCES usuario(id_usuario),
+      CONSTRAINT fk_transf_ranchero FOREIGN KEY (id_ranchero) REFERENCES usuario(id_usuario)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+  // --- Compras del ranchero: sin ellas el fondo nunca bajaría ---
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS gasto_rancho (
+      id_gasto    INT AUTO_INCREMENT PRIMARY KEY,
+      id_ranchero INT NOT NULL,
+      monto       DECIMAL(10,2) NOT NULL,
+      categoria   VARCHAR(30) NOT NULL DEFAULT 'OTROS',
+      detalle     VARCHAR(255) DEFAULT NULL,
+      fecha_hora  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_gasto_fecha (fecha_hora),
+      INDEX idx_gasto_ranchero (id_ranchero),
+      CONSTRAINT fk_gasto_ranchero FOREIGN KEY (id_ranchero) REFERENCES usuario(id_usuario)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+  // --- Relevo de los cargos únicos (acta de entrega-recepción) ---
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS relevo (
+      id_relevo   INT AUTO_INCREMENT PRIMARY KEY,
+      rol         ENUM('TESORERO','RANCHERO') NOT NULL,
+      id_saliente INT DEFAULT NULL,
+      id_entrante INT NOT NULL,
+      monto       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      observacion VARCHAR(255) DEFAULT NULL,
+      id_admin    INT NOT NULL,
+      fecha_hora  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_relevo_rol (rol),
+      INDEX idx_relevo_fecha (fecha_hora),
+      FOREIGN KEY (id_saliente) REFERENCES usuario(id_usuario),
+      FOREIGN KEY (id_entrante) REFERENCES usuario(id_usuario),
+      FOREIGN KEY (id_admin)    REFERENCES usuario(id_usuario)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
   // --- columnas/ajustes idempotentes para bases ya existentes ---
   await addCol('usuario', 'id_personal', 'id_personal INT NULL');
   await addCol('usuario', 'pregunta_seguridad', 'pregunta_seguridad VARCHAR(255) NULL');
@@ -170,6 +225,23 @@ const DB = process.env.DB_NAME;
   await addCol('usuario', 'saldo', 'saldo DECIMAL(8,2) NOT NULL DEFAULT 0');
   await addCol('usuario', 'intentos_fallidos', 'intentos_fallidos INT NOT NULL DEFAULT 0');
   await addCol('usuario', 'bloqueado_hasta', 'bloqueado_hasta DATETIME NULL');
+
+  // Verificación en dos pasos. El secreto va cifrado con AES-256-GCM
+  // (TOTP_LLAVE del .env), y `totp_ultimo_paso` impide reusar un código
+  // dentro de su ventana de 30 segundos.
+  await addCol('usuario', 'totp_secreto', 'totp_secreto VARCHAR(255) DEFAULT NULL');
+  await addCol('usuario', 'totp_activado', 'totp_activado TINYINT(1) NOT NULL DEFAULT 0');
+  await addCol('usuario', 'totp_activado_en', 'totp_activado_en DATETIME DEFAULT NULL');
+  await addCol('usuario', 'totp_ultimo_paso', 'totp_ultimo_paso BIGINT DEFAULT NULL');
+
+  // Reinicio de cuenta por el administrador: contraseña temporal que
+  // caduca y obligación de cambiarla al primer ingreso.
+  await addCol('usuario', 'debe_cambiar_password', 'debe_cambiar_password TINYINT(1) NOT NULL DEFAULT 0');
+  await addCol('usuario', 'password_temporal_hasta', 'password_temporal_hasta DATETIME DEFAULT NULL');
+
+  // Los códigos de respaldo se retiraron: la recuperación pasa por el
+  // administrador. Se elimina la tabla si viene de una versión anterior.
+  await conn.query('DROP TABLE IF EXISTS codigo_respaldo');
 
   // Asegura que los roles nuevos existan en el enum (seguro de re-ejecutar)
   await conn.query(`
