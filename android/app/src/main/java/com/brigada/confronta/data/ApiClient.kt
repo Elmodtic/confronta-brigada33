@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 object ApiClient {
 
     /** Dirección con la que sale el APK. Sirve mientras el túnel no cambie. */
-    const val URL_POR_DEFECTO = "https://demand-repeated-bios-ancient.trycloudflare.com/"
+    const val URL_POR_DEFECTO = "https://fingers-practitioners-tomatoes-carrier.trycloudflare.com/"
 
     /**
      * Directorio público con la dirección vigente del servidor.
