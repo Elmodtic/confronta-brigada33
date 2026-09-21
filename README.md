@@ -5,137 +5,195 @@ para digitalizar la confronta diaria del personal militar: saldo prepago,
 reserva de comida, ticket QR de un solo uso, canje en el comedor, reportes
 Excel y panel de KPIs. Roles: **ADMIN, TESORERO, RANCHERO, OPERADOR, CONSULTA**.
 
-Documentación técnica ampliada: [docs/CONTEXTO_TECNICO.md](docs/CONTEXTO_TECNICO.md)
-y [docs/GUIA_ARRANQUE.md](docs/GUIA_ARRANQUE.md).
-
-Para dejar el servidor publicado y accesible desde cualquier red —túnel,
-certificado, cortafuegos y cómo la app encuentra la dirección vigente—
-ver [docs/PUBLICAR_SERVIDOR.md](docs/PUBLICAR_SERVIDOR.md).
+El ingreso lleva **verificación en dos pasos (TOTP) obligatoria para todos los
+roles salvo el ADMIN**.
 
 ## Arquitectura
 
 ```
-android/   → app Kotlin (Retrofit), consume la API por HTTP
-backend/   → API Node.js + Express, JWT, bcrypt, exceljs
-db/        → esquema MySQL (db/schema.sql)
+android/   → app Kotlin (Retrofit), consume la API por HTTPS
+backend/   → API Node.js + Express, JWT, bcrypt, TOTP, exceljs
+db/        → esquema y migraciones MySQL
+docs/      → documentación técnica y de despliegue
 ```
 
-El backend y MySQL corren en la PC de desarrollo; la app Android se conecta
-por HTTP a la IP LAN de esa PC (o `10.0.2.2` desde el emulador).
+```
+Teléfono ──HTTPS──> Cloudflare ──túnel saliente──> Nginx ──> Node ──> MySQL
+                                                   :443      :3000    :3306
+```
+
+Documentación: [docs/CONTEXTO_TECNICO.md](docs/CONTEXTO_TECNICO.md) ·
+[docs/GUIA_ARRANQUE.md](docs/GUIA_ARRANQUE.md) ·
+[docs/PUBLICAR_SERVIDOR.md](docs/PUBLICAR_SERVIDOR.md) (túnel, certificado,
+cortafuegos y cómo la app encuentra la dirección vigente).
 
 ---
 
-## Cómo retomar el desarrollo en OTRA PC (clonar y continuar)
+## Levantarlo desde cero en una PC nueva
 
-### 1. Requisitos previos a instalar en la PC nueva
+### 1. Requisitos
 
 - **Git**
-- **Node.js** v18+ (`node --version`)
-- **XAMPP** (o MySQL 8+ standalone) — para la base de datos
-- **Android Studio** reciente (JDK 21 / JBR incluido, AGP 9.2.1, Gradle 9.4.1)
+- **Node.js** 18 o superior (probado en v22)
+- **XAMPP** (MySQL/MariaDB) o MySQL 8 standalone
+- **Android Studio** reciente (JDK 21 / JBR, AGP 9.2.1, Gradle 9.4.1, minSdk 26)
 
-### 2. Clonar el repositorio
+Solo para publicar el servidor fuera de la red local: **Nginx** y
+**cloudflared** (ver `docs/PUBLICAR_SERVIDOR.md`).
+
+### 2. Clonar
 
 ```bash
 git clone https://github.com/Elmodtic/confronta-brigada33.git
 cd confronta-brigada33
 ```
 
-### 3. Base de datos (MySQL vía XAMPP)
+### 3. Base de datos
 
-1. Arranca **MySQL** desde el panel de XAMPP (usuario `root`, sin contraseña
-   por defecto en `localhost:3306`).
-2. Importa `db/schema.sql` desde phpMyAdmin, o por consola:
-   ```bash
-   mysql -u root -p < db/schema.sql
-   ```
-   Esto crea la base `confronta_brigada` con catálogos y datos de prueba.
-3. (Opcional) Para recargar los catálogos oficiales (grados/unidades) sin
-   perder el usuario ADMIN:
-   ```bash
-   cd backend
-   node resetcatalogos.js
-   ```
-
-### 4. Backend (Node.js / Express)
+Arranca MySQL desde el panel de XAMPP y deja que la migración construya el
+esquema completo. **No importes `db/schema.sql` a mano**: está congelado en una
+versión temprana y le faltan las tablas y columnas que se agregaron después.
 
 ```bash
 cd backend
 npm install
-copy .env.example .env      # en PowerShell: Copy-Item .env.example .env
+node migrar.js
 ```
 
-Edita `backend/.env` con tus datos reales (ver tabla de variables abajo), y
-luego:
+`migrar.js` crea la base, todas las tablas y las columnas de TOTP y de
+recuperación de cuenta. Es seguro repetirlo: solo aplica lo que falte.
+
+**Se ejecuta con un usuario que pueda crear tablas** (`root` en XAMPP). El
+usuario restringido con el que después corre la aplicación no puede, y eso es
+deliberado. Para crearlo:
+
+```bash
+C:\xampp\mysql\bin\mysql.exe -u root < ../db/seguridad_db.sql
+```
+
+Antes reemplaza `CAMBIA_ESTA_CONTRASENA` por una contraseña real. **Evita el
+carácter `#`**: `dotenv` lo lee como inicio de comentario y la conexión falla
+con un mensaje que no apunta a la causa.
+
+Para cargar los catálogos oficiales (17 grados y 9 unidades de la Fuerza
+Terrestre) conservando el ADMIN:
+
+```bash
+node resetcatalogos.js
+```
+
+### 4. Variables de entorno
+
+```bash
+copy .env.example .env
+```
+
+Dos valores **se generan, no se inventan**:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+El primero es `JWT_SECRET`, el segundo `TOTP_LLAVE`.
+
+| Variable | Valor típico | Para qué sirve |
+|---|---|---|
+| `PORT` | `3000` | Puerto de la API. |
+| `DB_HOST` · `DB_PORT` | `localhost` · `3306` | Servidor MySQL. |
+| `DB_USER` · `DB_PASSWORD` | usuario restringido | Credenciales de la aplicación. |
+| `DB_NAME` | `confronta_brigada` | Base de datos. |
+| `JWT_SECRET` | 96 hex aleatorios | Firma de los tokens. Nunca reutilizar entre entornos. |
+| `JWT_EXPIRES` | `8h` | Vigencia del token. |
+| `CORS_ORIGINS` | `*` en desarrollo | Orígenes permitidos. |
+| `TOTP_LLAVE` | **64 hex exactos** | Cifra (AES-256-GCM) los secretos TOTP guardados. |
+
+El servidor **no arranca** si `JWT_SECRET` está vacío, es el valor de plantilla
+o mide menos de 32 caracteres, ni si `TOTP_LLAVE` no son 64 hexadecimales. Es a
+propósito: una configuración a medias se descubre al arrancar, no en producción.
+
+> Si se pierde `TOTP_LLAVE`, ningún código de verificación podrá validarse y
+> habrá que reinscribir a todos los usuarios desde la cuenta de administrador.
+
+### 5. Arrancar la API
 
 ```bash
 npm start
 ```
 
-Debe mostrar `API escuchando en http://localhost:3000` (o el puerto que
-hayas definido). También puedes usar `iniciar_backend.bat` (doble clic) en
-Windows, que hace `cd backend && node server.js` automáticamente.
+Debe imprimir `API escuchando en http://localhost:3000`. En Windows también
+sirve `iniciar_backend.bat`.
 
-### 5. Variables de entorno (`backend/.env`)
+Para publicarla fuera de la red local (Nginx + túnel), seguir
+[docs/PUBLICAR_SERVIDOR.md](docs/PUBLICAR_SERVIDOR.md) y usar
+`arrancar_todo.bat`.
 
-**No se sube al repositorio** (está en `.gitignore`). Cópialo desde
-`backend/.env.example`, que sí está versionado como plantilla. Variables que
-usa el backend (`process.env.*` en `server.js`):
+### 6. App Android
 
-| Variable | Ejemplo / valor típico en desarrollo | Para qué sirve |
-|---|---|---|
-| `PORT` | `3000` | Puerto en el que escucha la API Express. |
-| `DB_HOST` | `localhost` | Host del servidor MySQL. |
-| `DB_PORT` | `3306` | Puerto de MySQL (el de XAMPP por defecto). |
-| `DB_USER` | `root` | Usuario de MySQL. |
-| `DB_PASSWORD` | *(vacío en XAMPP por defecto)* | Contraseña de MySQL. |
-| `DB_NAME` | `confronta_brigada` | Nombre de la base de datos (ver `db/schema.sql`). |
-| `JWT_SECRET` | *(cadena aleatoria larga, propia de cada entorno)* | Clave para firmar/verificar los tokens JWT. **Nunca reutilizar la de otro entorno ni subirla a git.** |
-| `JWT_EXPIRES` | `8h` | Tiempo de expiración del token JWT. |
-| `CORS_ORIGINS` | `*` en desarrollo; dominio real en producción | Orígenes permitidos por CORS (separados por coma si son varios). |
+Abre `android/` en Android Studio y espera la sincronización de Gradle.
 
-> Genera un `JWT_SECRET` nuevo y fuerte en cada entorno, por ejemplo:
-> `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
+**No hace falta editar ninguna IP a mano.** La app resuelve sola la dirección
+del servidor:
 
-### 6. App Android — apuntar al backend de la PC nueva
+1. Al abrirse consulta `servidor.json` de este repositorio (vía
+   `raw.githubusercontent.com`) y se reconfigura con la dirección que encuentre.
+2. Si eso falla, usa `URL_POR_DEFECTO` en
+   [ApiClient.kt](android/app/src/main/java/com/brigada/confronta/data/ApiClient.kt).
+3. Como último recurso manual: en la pantalla de ingreso, **mantener pulsado el
+   escudo** abre el campo para escribir la dirección del servidor.
 
-1. Abre `android/` en Android Studio ("Open" → seleccionar la carpeta) y
-   espera a que sincronice Gradle.
-2. En Windows, averigua la IP LAN de la PC nueva: `ipconfig` (busca
-   "Dirección IPv4", ej. `10.20.91.170`).
-3. Edita la constante `BASE_URL` en
-   [android/app/src/main/java/com/brigada/confronta/data/ApiClient.kt](android/app/src/main/java/com/brigada/confronta/data/ApiClient.kt):
-   ```kotlin
-   const val BASE_URL = "http://TU_IP_LAN:3000/"
-   ```
-   - Para el emulador de Android Studio también funciona `http://10.0.2.2:3000/`.
-   - Para un celular físico, debe ser la IP LAN real, y el celular debe estar
-     en la misma red WiFi que la PC.
-4. Abre el puerto 3000 en el Firewall de Windows (una sola vez, como
-   administrador): clic derecho sobre `abrir_firewall_puerto3000.bat` →
-   "Ejecutar como administrador".
-5. Ejecuta ▶ (Run 'app') con el backend ya corriendo.
+`iniciar_tunel.ps1` actualiza `servidor.json` y lo sube al repositorio en cada
+arranque, así que un cambio de túnel no obliga a reinstalar el APK.
 
-### 7. Usuarios de prueba
+Para desarrollo contra un backend local: apuntar a `http://10.0.2.2:3000/`
+desde el emulador, o a la IP LAN de la PC desde un celular en la misma WiFi
+(con el puerto 3000 abierto: `abrir_firewall_puerto3000.bat` como administrador).
 
-Ver [docs/CONTEXTO_TECNICO.md](docs/CONTEXTO_TECNICO.md) para el detalle
-completo de roles, endpoints y modelo de datos. El login del personal es por
-**cédula** (excepto el ADMIN, que usa `admin`).
+### 7. Primer ingreso
 
-### 8. Qué NO se sube al repo (y por qué)
+El `username` de cada usuario **es su cédula**; el ADMIN es la única excepción
+y entra como `admin`. La contraseña inicial del ADMIN se define al crear la
+base — cámbiala apenas entres.
 
-- `backend/.env` — credenciales y `JWT_SECRET` reales de cada entorno.
-- `Credenciales.txt` — notas locales con contraseñas/datos sensibles.
+Todos los roles salvo el ADMIN deben inscribir su segundo factor antes de poder
+usar la aplicación: al ingresar por primera vez la app lleva directo a la
+pantalla de inscripción del código TOTP (Google Authenticator, Aegis, etc.).
+
+Si un usuario pierde el teléfono, el administrador lo busca por cédula y usa
+**Reiniciar cuenta**: la contraseña vuelve a ser la propia cédula, con 24 horas
+de vigencia, y al ingresar se le obliga a cambiarla y a volver a inscribir el
+segundo factor.
+
+---
+
+## Qué NO se sube al repositorio (y por qué)
+
+- `backend/.env` — credenciales, `JWT_SECRET` y `TOTP_LLAVE` reales.
+- `certs/*.key` — llave privada TLS. El certificado público sí está versionado;
+  la llave se regenera (ver `docs/PUBLICAR_SERVIDOR.md`).
+- `android/keystore/` y `android/keystore.properties` — **firma del APK de
+  release**. Si se pierde, no se puede volver a firmar una actualización de la
+  app ya instalada; si se filtra, cualquiera puede publicar actualizaciones
+  falsas. Consérvala fuera del repositorio, en un lugar seguro.
+- `Credenciales.txt`, `db/respaldos/` — datos sensibles y cédulas reales.
 - `node_modules/`, `build/`, `.gradle/`, `local.properties`, APKs — se
-  regeneran con `npm install` / Gradle Sync, no deben versionarse.
-- `CLAUDE.md` — notas internas de desarrollo con Claude Code (ver
-  `docs/CONTEXTO_TECNICO.md` como equivalente versionado).
+  regeneran con `npm install` y Gradle Sync.
+- `url_tunel.txt`, `*.log` — efímeros, cambian en cada arranque.
 
-Si al clonar en la PC nueva falta alguno de estos archivos "de plantilla"
-(`.env.example`), es intencional: cópialo y complétalo tú con tus propios
-valores, nunca reutilices `JWT_SECRET` de otra máquina.
+Los archivos de plantilla (`.env.example`) sí están versionados: cópialos y
+complétalos con tus propios valores, nunca reutilices claves de otra máquina.
 
-### 9. Convención de commits y trazabilidad
+## Advertencia de seguridad pendiente
+
+Mientras el túnel esté activo, **la API queda accesible desde internet**. Con
+datos de prueba es aceptable. Antes de cargar cédulas reales del personal hay
+que cerrar el acceso (red privada tipo Tailscale, o Cloudflare Access delante
+del túnel). Está anotado como recomendación en el informe del proyecto.
+
+## Convención de commits y trazabilidad
 
 Todo cambio no trivial sigue este flujo, auditado en `CHECKLIST_AUDITORIA.md`:
 

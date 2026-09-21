@@ -36,8 +36,8 @@ crashlytics.properties
 crashlytics-build.properties
 fabric.properties
 
-# Documentacion interna (no se sube; ver docs/CONTEXTO_TECNICO.md)
-CLAUDE.md
+# CLAUDE.md SI se versiona: es el contexto que otro Claude Code lee al abrir
+# el proyecto. No debe contener credenciales.
 
 # Notas locales con datos sensibles (nunca se sube)
 Credenciales.txt
